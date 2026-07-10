@@ -6,30 +6,27 @@
 <title>mmDoku 数字方格</title>
 <style>
   :root {
-    --bg: #f4f1ea;          /* 护眼米底 */
-    --panel: #fbf9f4;
-    --cell: #ffffff;
-    --ink: #2b2b2b;
-    --muted: #7a756b;
-    --line-thin: #cfc8ba;
-    --line-thick: #4a4438;
-    --accent: #3f6fb0;      /* 主色 蓝 */
-    --sel: rgba(63,111,176,.28);   /* 选中格 */
-    --line-hl: rgba(63,111,176,.12);/* 同行列 冷 */
-    --cage-hl: rgba(214,158,46,.16);/* 同笼 暖 */
-    --same: rgba(70,150,90,.20);    /* 同数字 */
-    --warn: #c0392b;        /* 冲突警告色 */
-    --btn: #ece4d4;
-    --btn-ink: #3a352c;
-    --btn-active: #d9cdb4;
-    --note-ink: #6b7a55;
+    --bg: #f4f1ea; --panel: #fbf9f4; --cell: #ffffff; --ink: #2b2b2b; --muted: #7a756b;
+    --line-thin: #d8d1c4; --grid-bg: #cfc8ba;
+    --accent: #3f6fb0;                 /* 选中环/主色(不与笼色重复) */
+    --sel: rgba(63,111,176,.40);       /* 选中格底色 */
+    --line-hl: rgba(63,111,176,.15);   /* 同行列 冷底 */
+    --cage-hl: rgba(214,158,46,.20);   /* 同笼 暖底 */
+    --same-ink: #1f8a5a;               /* 同数字提示 文字色 */
+    --warn: #c0392b;                   /* 冲突警告色 */
+    --given-bg: #efe7d4;               /* 单格已知格底 */
+    --btn: #ece4d4; --btn-ink: #3a352c; --btn-active: #d9cdb4; --note-ink: #6b7a55;
+    /* 笼四色(边框) */
+    --cage0: #b5623f; --cage1: #4f8a72; --cage2: #8a6dae; --cage3: #b39237;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #1c1e22; --panel: #24272c; --cell: #2b2f36; --ink: #e8e6e0; --muted: #9a958c;
-      --line-thin: #454a52; --line-thick: #aab0ba; --accent: #6fa0dd;
-      --sel: rgba(111,160,221,.34); --line-hl: rgba(111,160,221,.16); --cage-hl: rgba(224,178,86,.20);
-      --same: rgba(120,190,140,.24); --warn: #ff6b5b; --btn: #343841; --btn-ink: #e8e6e0; --btn-active: #454b56; --note-ink: #a7b487;
+      --line-thin: #454a52; --grid-bg: #3a3f47; --accent: #6fa0dd;
+      --sel: rgba(111,160,221,.44); --line-hl: rgba(111,160,221,.20); --cage-hl: rgba(224,178,86,.26);
+      --same-ink: #5fd39a; --warn: #ff6b5b; --given-bg: #343a44;
+      --btn: #343841; --btn-ink: #e8e6e0; --btn-active: #454b56; --note-ink: #a7b487;
+      --cage0: #e28a63; --cage1: #6fc0a0; --cage2: #b79ce0; --cage3: #ddbb63;
     }
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -39,164 +36,1071 @@
     font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
     overflow: hidden;
   }
+  #stage { display: flex; flex-direction: row; justify-content: center; align-items: stretch; height: 100svh; width: 100%; gap: 8px; }
   #app {
     display: flex; flex-direction: column;
-    height: 100svh; width: 100%; max-width: 640px; margin: 0 auto;
+    height: 100svh; width: 100%; max-width: 560px;
     padding: 6px; gap: 6px;
   }
-  /* ---- 控制区 ---- */
-  #control { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
-  .crow { display: grid; gap: 6px; align-items: stretch; }
-  .crow > * { min-width: 0; height: 44px; }
-  .crow.r1 { grid-template-columns: minmax(0,1.1fr) minmax(0,.95fr) minmax(0,1.1fr) 12px minmax(0,1fr) minmax(0,1fr); }
-  .crow.r3 { grid-template-columns: 1fr 1.3fr; }
-  .gap { height: 44px; }
-  #start.btn { background: var(--accent); color: #fff; border-color: var(--accent); }
-  #start.btn:active { filter: brightness(.92); }
+  /* ---- 控制区:左 QR 方块 + 右 4×5 栅格 ---- */
+  #control { flex: 0 0 auto; display: grid; grid-template-columns: auto 1fr; gap: 6px; }
+  #qrbox {
+    aspect-ratio: 1 / 1; height: 100%; background: #fff; border-radius: 8px; border: 1px solid var(--line-thin);
+    display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 4px;
+  }
+  #qrbox canvas { image-rendering: pixelated; width: 100%; height: 100%; object-fit: contain; }
+  #qrbox .qr-empty { color: var(--muted); font-size: 12px; text-align: center; }
+  #cgrid { display: grid; grid-template-columns: repeat(5, 1fr); grid-auto-rows: 40px; gap: 5px; }
+  #cgrid > * { min-width: 0; height: 40px; font-size: 15px; }
+  .c12 { grid-column: span 2; } .c5 { grid-column: 1 / -1; }
   select, .btn, #code {
-    font-size: 16px; border: 1px solid var(--line-thin); border-radius: 10px;
-    background: var(--btn); color: var(--btn-ink); padding: 0 8px;
+    border: 1px solid var(--line-thin); border-radius: 9px;
+    background: var(--btn); color: var(--btn-ink); padding: 0 6px;
   }
   select { appearance: none; text-align: center; text-align-last: center; font-weight: 600; }
-  .btn { cursor: pointer; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+  .btn { cursor: pointer; font-weight: 600; display: flex; align-items: center; justify-content: center; font-size: 19px; }
   .btn:active { background: var(--btn-active); }
-  #code { background: var(--cell); color: var(--ink); font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: .5px; text-align: center; }
-  /* ---- 状态区 ---- */
-  #status {
-    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
-    padding: 2px 8px; font-size: 15px; color: var(--muted); min-height: 26px;
-  }
-  #status .left { display: flex; align-items: center; gap: 10px; }
-  #timer { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--ink); font-size: 18px; }
-  #help { border: none; background: none; color: var(--accent); font-size: 18px; cursor: pointer; padding: 2px 6px; font-weight: 700; }
+  .btn.wide { font-size: 15px; }
+  #code { background: var(--cell); color: var(--ink); font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: .3px; text-align: center; font-size: 14px; }
+  #timer, #score { display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; font-weight: 700; background: var(--panel); border-radius: 8px; border: 1px solid var(--line-thin); }
+  #timer { color: var(--ink); } #score { color: var(--muted); }
+  #playbtn { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #playbtn:active { filter: brightness(.92); }
   /* ---- 棋盘区 ---- */
-  #board-wrap { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; }
-  #board { display: grid; background: var(--line-thick); border: 3px solid var(--line-thick); border-radius: 6px; overflow: hidden; }
+  #board-wrap { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; position: relative; }
+  #board { display: grid; background: transparent; border-radius: 6px; overflow: hidden; }
   .cell {
-    position: relative; background: var(--cell); container-type: size;
-    display: grid; grid-template-rows: auto 1fr; overflow: hidden;
-    border: 0 solid var(--line-thin);
-    cursor: pointer; user-select: none;
+    position: relative; background: transparent; container-type: size;   /* 常规底色=页面底色(透明) */
+    display: grid; grid-template-rows: 1fr 3fr; overflow: hidden;
+    border: 0 solid var(--grid-bg); cursor: pointer; user-select: none;
   }
+  .cell.given { background: transparent; }   /* 已知格也用透明底,靠灰色粗体数字区分;仍可选中不可改 */
   .cell .clue {
-    grid-row: 1; text-align: left; padding: 1px 3px; line-height: 1;
-    font-size: 26cqmin; font-weight: 700; color: var(--muted); white-space: nowrap; overflow: hidden;
+    grid-row: 1; display: flex; align-items: center; padding: 0 4px; line-height: 1;
+    font-size: 24cqmin; font-weight: 700; color: var(--muted); white-space: nowrap; overflow: hidden;
   }
+  .cell .main { grid-row: 2; position: relative; }
   .cell .val {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    font-size: 62cqmin; font-weight: 600; color: var(--ink); pointer-events: none;
+    font-size: 56cqmin; font-weight: 600; color: var(--ink); pointer-events: none;
   }
+  .cell.given .val { color: var(--muted); font-weight: 700; }
   .cell.conflict .val { color: var(--warn); }
-  .cell .notes { grid-row: 2; display: grid; padding: 1px; gap: 0; }
-  .cell .notes span { display: flex; align-items: center; justify-content: center; font-size: 26cqmin; color: var(--note-ink); line-height: 1; }
+  .cell.same-num .val { color: var(--same-ink); }
+  .cell .notes { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(3,1fr); grid-template-rows: repeat(3,1fr); padding: 1px; }
+  .cell .notes span { display: flex; align-items: center; justify-content: center; font-size: 20cqmin; color: var(--note-ink); line-height: 1; }
   .cell.filled .notes { display: none; }
-  /* 高亮层(伪元素叠加) */
-  .cell.hl-line::before, .cell.hl-cage::after, .cell.hl-same > .samebg { content: ""; position: absolute; inset: 0; pointer-events: none; }
-  .cell.hl-line::before { background: var(--line-hl); }
-  .cell.hl-cage::after { background: var(--cage-hl); }
-  .cell .samebg { position: absolute; inset: 0; pointer-events: none; }
-  .cell.hl-same .samebg { background: var(--same); }
-  .cell.selected { box-shadow: inset 0 0 0 3px var(--accent); }
-  .cell.selected::before { background: var(--sel) !important; }
-  .cell .clue, .cell .val, .cell .notes { position: relative; z-index: 2; }
+  /* 高亮层:只动底色,不碰边框 */
+  .cell .hlbg { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+  .cell.hl-line .hlbg { background: var(--line-hl); }
+  .cell.hl-cage .hlbg { background: var(--cage-hl); }
+  .cell.selected .hlbg { background: var(--sel); }
+  .cell .clue, .cell .main { position: relative; z-index: 2; }
+  /* ---- 开始前/暂停 说明遮盖(盖住棋盘+输入,置顶) ---- */
+  #playzone { position: relative; display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; }
+  #playcover { position: absolute; inset: 0; background: var(--panel); border-radius: 10px; display: none;
+    align-items: center; justify-content: center; padding: 16px; z-index: 30; overflow: auto; }
+  #playcover.show { display: flex; }
+  #playcover .cover-card { max-width: 480px; }
+  #playcover h3 { margin: 0 0 8px; font-size: 19px; text-align: center; }
+  #playcover p { margin: 6px 0; font-size: 14px; line-height: 1.6; color: var(--ink); }
+  #playcover hr { border: none; border-top: 1px solid var(--line-thin); margin: 10px 0; }
+  #playcover .cover-hint { text-align: center; color: var(--accent); font-weight: 700; margin-top: 12px; }
   /* ---- 输入区 ---- */
-  #input { flex: 0 0 auto; display: flex; gap: 10px; align-items: stretch; justify-content: center; padding-top: 2px; }
-  #numpad { display: grid; gap: 6px; }
+  #input { flex: 0 0 auto; display: flex; gap: 10px; align-items: center; justify-content: center; padding-top: 2px; }
+  #numpad { display: grid; grid-template-columns: repeat(3,1fr); grid-template-rows: repeat(3,1fr); gap: 6px; }
   #funcpad { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 6px; }
   .key {
     display: flex; align-items: center; justify-content: center; position: relative;
     background: var(--btn); color: var(--btn-ink); border: 1px solid var(--line-thin);
-    font-size: 28px; font-weight: 700; cursor: pointer; user-select: none;
-    width: 100%; height: 100%; border-radius: 8px;
+    font-weight: 700; cursor: pointer; user-select: none; width: 100%; height: 100%; border-radius: 8px;
   }
   .key:active { background: var(--btn-active); }
-  .key.dim { opacity: .32; }
-  .key .rem { position: absolute; top: 2px; right: 5px; font-size: 12px; font-weight: 600; color: var(--muted); }
-  body.note-mode .numkey { border-radius: 50% / 45%; }   /* 笔记模式:大圆角 */
-  .fkey { font-size: 15px; font-weight: 700; }
+  .key.blank { visibility: hidden; }
+  .key.dim { opacity: .3; }
+  .key .rem { position: absolute; top: 2px; right: 6px; font-size: 11px; font-weight: 600; color: var(--muted); }
+  body.note-mode .numkey { border-radius: 50% / 42%; border-width: 2px; border-color: var(--accent); }
+  .fkey { font-size: 20px; }
   #mode.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  /* ---- 辅助区(A 场景 9×9,占位) ---- */
+  #aux { display: none; width: 240px; flex: 0 0 auto; align-self: center; max-height: 100svh; overflow: auto;
+    background: var(--panel); border: 1px solid var(--line-thin); border-radius: 12px; padding: 14px; color: var(--ink); }
+  #stage.has-aux #aux { display: block; }
+  #aux h3 { margin: 0 0 8px; font-size: 16px; }
+  #aux .tag { display: inline-block; font-size: 12px; color: var(--muted); border: 1px dashed var(--line-thin); border-radius: 6px; padding: 2px 6px; margin: 2px 0; }
+  #aux p { font-size: 13px; color: var(--muted); line-height: 1.6; }
   /* ---- 弹层 ---- */
   #toast { position: fixed; left: 50%; bottom: 12%; transform: translateX(-50%); background: rgba(0,0,0,.82); color: #fff;
     padding: 10px 18px; border-radius: 20px; font-size: 15px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 50; max-width: 86%; text-align: center; }
   #toast.show { opacity: 1; }
   .modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; z-index: 60; padding: 20px; }
   .modal.show { display: flex; }
-  .card { background: var(--panel); color: var(--ink); border-radius: 14px; padding: 20px; max-width: 420px; width: 100%; max-height: 80vh; overflow: auto; }
-  .card h2 { margin: 0 0 10px; }
+  .card { background: var(--panel); color: var(--ink); border-radius: 14px; padding: 20px; max-width: 440px; width: 100%; max-height: 84vh; overflow: auto; display: flex; flex-direction: column; }
+  .card h2 { margin: 0 0 10px; text-align: center; }
   .card p, .card li { line-height: 1.6; font-size: 15px; }
-  .card .btn { height: 44px; margin-top: 12px; }
+  .card .btn { height: 44px; margin-top: 14px; font-size: 16px; align-self: center; min-width: 170px; padding: 0 20px; }  /* 单按钮居中 */
+  .card .row2 { display: flex; gap: 12px; justify-content: center; margin-top: 14px; }                                    /* 双按钮组居中 */
+  .card .row2 .btn { margin-top: 0; min-width: 130px; align-self: auto; }
   .card .big { font-size: 20px; text-align: center; }
 </style>
 </head>
 <body>
-<div id="app">
-  <div id="control">
-    <div class="crow r1">
-      <select id="size" aria-label="棋盘大小"></select>
-      <select id="diff" aria-label="难度"></select>
-      <button class="btn" id="gen">生成</button>
-      <div class="gap"></div>
-      <button class="btn" id="copy">复制</button>
-      <button class="btn" id="paste">粘贴</button>
+<div id="stage">
+  <div id="app">
+    <div id="control">
+      <div id="qrbox"><span class="qr-empty">交换码<br>二维码</span></div>
+      <div id="cgrid">
+        <select id="size" class="c12" aria-label="棋盘大小"></select>
+        <select id="diff" class="c12" aria-label="难度"></select>
+        <button class="btn" id="gen" title="生成">🪄</button>
+        <input id="code" class="c5" placeholder="交换码 ExCode" autocomplete="off" autocapitalize="off" spellcheck="false" />
+        <button class="btn" id="copy" title="复制">🗐</button>
+        <button class="btn" id="paste" title="粘贴">📋</button>
+        <button class="btn" id="photo" title="拍照扫码">📷</button>
+        <button class="btn" id="verify" title="校验">🔎</button>
+        <span></span>
+        <div id="timer" class="c12">00:00</div>
+        <div id="score" class="c12">0 分</div>
+        <button class="btn" id="playbtn" title="开始/暂停/继续">▶️</button>
+      </div>
     </div>
-    <div class="crow r2">
-      <input id="code" placeholder="交换码" autocomplete="off" autocapitalize="off" spellcheck="false" />
-    </div>
-    <div class="crow r3">
-      <button class="btn" id="verify">校验</button>
-      <button class="btn" id="start">开始</button>
+    <div id="playzone">
+      <div id="board-wrap"><div id="board"></div></div>
+      <div id="input">
+        <div id="numpad"></div>
+        <div id="funcpad">
+          <button class="key fkey" id="mode" title="笔记">✏️</button>
+          <button class="key fkey" id="del" title="删除">🗑️</button>
+          <button class="key fkey" id="undo" title="撤销">↩️</button>
+          <button class="key fkey" id="redo" title="重做">↪️</button>
+        </div>
+      </div>
+      <div id="playcover">
+        <div class="cover-card">
+          <h3>MathDoku 玩法与说明</h3>
+          <p>在 N×N 方格里填 1~N,<b>每行、每列数字不重复</b>。</p>
+          <p><b>四色粗线</b>围出<b>笼子</b>,左上角是目标数+运算符,笼内数字用该运算得目标;<b>单格已直接给出、不可改</b>。笼内数字可重复,只要不同行同列。</p>
+          <p>填错(行列重复 / 笼子已不可能)时数字变<span style="color:var(--warn)">红</span>提醒(不给答案);点已有数字的格,同数字会<span style="color:var(--same-ink)">变色</span>。填满且无红即<b>通关</b>。</p>
+          <hr>
+          <p><b>控制区</b>:🪄 生成新题并出交换码 · 🗐 复制 · 📋 粘贴 · 📷 拍照扫码 · 🔎 校验;左侧二维码可给手机扫。</p>
+          <p><b>▶️ 开始</b> / <b>⏸️ 暂停</b>(停表看说明)/ <b>🔄 继续</b>。底部数字键填数(角标=该数还差几个);✏️ 笔记 · 🗑️ 删除 · ↩️ 撤销 · ↪️ 重做。</p>
+          <p class="cover-hint">▶️ 点上方「开始」按钮开玩</p>
+        </div>
+      </div>
     </div>
   </div>
-  <div id="status">
-    <div class="left"><span id="timer">00:00</span><span id="best">最佳 --</span></div>
-    <button id="help">?</button>
-  </div>
-  <div id="board-wrap"><div id="board"></div></div>
-  <div id="input">
-    <div id="numpad"></div>
-    <div id="funcpad">
-      <button class="key fkey" id="mode">笔记</button>
-      <button class="key fkey" id="del">删除</button>
-      <button class="key fkey" id="undo">撤销</button>
-      <button class="key fkey" id="redo">重做</button>
-    </div>
-  </div>
+  <aside id="aux">
+    <h3>辅助区 · 9×9</h3>
+    <div><span class="tag">因式分解</span> <span class="tag">除法分解</span> <span class="tag">加法分解</span> <span class="tag">减法分解</span> <span class="tag">因子求和</span></div>
+    <p>规格待详述,下一轮单独设计:选中笼后对目标数做各类分解与因子求和,辅助 9×9 推理。</p>
+  </aside>
 </div>
+<input type="file" id="photoinput" accept="image/*" capture="environment" style="display:none" />
 <div id="toast"></div>
-<div class="modal" id="help-modal">
-  <div class="card">
-    <h2>玩法</h2>
-    <p>在 N×N 方格里填 1~N,<b>每行、每列数字不重复</b>。</p>
-    <p>粗线围出的<b>笼子</b>左上角有目标数和运算符,笼内数字用该运算要等于目标(单格直接填该数)。笼内数字可重复,只要不同行同列。</p>
-    <p>填错(行列重复 / 笼子已不可能)时数字变<span style="color:var(--warn)">红色</span>提醒,但不告诉你答案。</p>
-    <p>底部左侧数字键填数(键角标=该数还差几个),右侧:笔记/删除/撤销/重做。点<b>笔记</b>可记候选(圆角键)。全部填满且无红色即通关。</p>
-    <p>点<b>生成</b>出新题并得交换码;发给家人,他们<b>粘贴</b>+<b>开始</b>即可玩同一局。</p>
-    <button class="btn" id="help-close">知道了</button>
-  </div>
-</div>
 <div class="modal" id="win-modal">
   <div class="card">
     <h2>🎉 通关!</h2>
     <p class="big" id="win-time"></p>
-    <p class="big" id="win-best"></p>
-    <button class="btn" id="win-close">好</button>
+    <p class="big" id="win-score"></p>
+    <button class="btn wide" id="win-close">好</button>
+  </div>
+</div>
+<div class="modal" id="confirm-modal">
+  <div class="card">
+    <h2 id="confirm-title">确认</h2>
+    <p id="confirm-msg"></p>
+    <div class="row2">
+      <button class="btn wide" id="confirm-no">取消</button>
+      <button class="btn wide" id="confirm-yes" style="background:var(--accent);color:#fff;border-color:var(--accent)">确定</button>
+    </div>
   </div>
 </div>
 <script>
 "use strict";
+// qr.mjs — self-contained, dependency-free QR code codec (byte mode, versions 1..10).
+//
+// Exports:
+//   qrEncode(text, opts)             -> { size, modules }  (modules: size×size 0/1, 1=dark)
+//   qrDecodeMatrix(modules)          -> decoded string (throws on failure)
+//   qrDecodeImage(gray, w, h)        -> decoded string, or null on failure (never throws)
+//
+// Pure computation only — no DOM/Canvas, no Node-only APIs on runtime paths.
+// The browser caller supplies grayscale pixel data to qrDecodeImage.
+//
+// To inline into an HTML file: replace `export function` with `function` and expose a
+// `QR = { qrEncode, qrDecodeMatrix, qrDecodeImage }` object.
+
+// ============================================================================
+// GF(256) arithmetic — primitive polynomial 0x11d, generator α = 2
+// ============================================================================
+const GF_EXP = new Uint8Array(512);
+const GF_LOG = new Uint16Array(256);
+(function initGF() {
+  let x = 1;
+  for (let i = 0; i < 255; i++) {
+    GF_EXP[i] = x;
+    GF_LOG[x] = i;
+    x <<= 1;
+    if (x & 0x100) x ^= 0x11d;
+  }
+  for (let i = 255; i < 512; i++) GF_EXP[i] = GF_EXP[i - 255];
+})();
+
+function gfMul(a, b) {
+  if (a === 0 || b === 0) return 0;
+  return GF_EXP[GF_LOG[a] + GF_LOG[b]];
+}
+function gfInverse(a) {
+  // a != 0
+  return GF_EXP[255 - GF_LOG[a]];
+}
+// gf_pow(2, p) with possibly-negative p, using α = 2 (log[2] = 1)
+function gfPow2(p) {
+  let m = p % 255;
+  if (m < 0) m += 255;
+  return GF_EXP[m];
+}
+
+// ---- polynomial helpers (index 0 = highest-degree coefficient) ----
+function gfPolyScale(p, x) {
+  const r = new Array(p.length);
+  for (let i = 0; i < p.length; i++) r[i] = gfMul(p[i], x);
+  return r;
+}
+function gfPolyAdd(p, q) {
+  const r = new Array(Math.max(p.length, q.length)).fill(0);
+  for (let i = 0; i < p.length; i++) r[i + r.length - p.length] = p[i];
+  for (let i = 0; i < q.length; i++) r[i + r.length - q.length] ^= q[i];
+  return r;
+}
+function gfPolyMul(p, q) {
+  const r = new Array(p.length + q.length - 1).fill(0);
+  for (let j = 0; j < q.length; j++)
+    for (let i = 0; i < p.length; i++)
+      r[i + j] ^= gfMul(p[i], q[j]);
+  return r;
+}
+function gfPolyEval(p, x) {
+  let y = p[0];
+  for (let i = 1; i < p.length; i++) y = gfMul(y, x) ^ p[i];
+  return y;
+}
+function gfPolyDiv(dividend, divisor) {
+  const out = dividend.slice();
+  const n = dividend.length - (divisor.length - 1);
+  for (let i = 0; i < n; i++) {
+    const coef = out[i];
+    if (coef !== 0) {
+      for (let j = 1; j < divisor.length; j++)
+        if (divisor[j] !== 0) out[i + j] ^= gfMul(divisor[j], coef);
+    }
+  }
+  const sep = out.length - (divisor.length - 1);
+  return [out.slice(0, sep), out.slice(sep)];
+}
+
+// ============================================================================
+// Reed–Solomon encode / decode over GF(256)  (Berlekamp–Massey + Forney)
+// (Faithful port of the well-known "RS for coders" algorithm.)
+// ============================================================================
+function rsGeneratorPoly(nsym) {
+  let g = [1];
+  for (let i = 0; i < nsym; i++) g = gfPolyMul(g, [1, gfPow2(i)]);
+  return g;
+}
+function rsEncode(msgIn, nsym) {
+  const gen = rsGeneratorPoly(nsym);
+  const out = msgIn.concat(new Array(gen.length - 1).fill(0));
+  for (let i = 0; i < msgIn.length; i++) {
+    const coef = out[i];
+    if (coef !== 0)
+      for (let j = 1; j < gen.length; j++) out[i + j] ^= gfMul(gen[j], coef);
+  }
+  return msgIn.concat(out.slice(msgIn.length));
+}
+function rsCalcSyndromes(msg, nsym) {
+  const s = [0];
+  for (let i = 0; i < nsym; i++) s.push(gfPolyEval(msg, gfPow2(i)));
+  return s; // length nsym+1, s[0] = 0
+}
+function rsFindErrorLocator(synd, nsym) {
+  let errLoc = [1];
+  let oldLoc = [1];
+  const syndShift = synd.length - nsym; // = 1 here
+  for (let i = 0; i < nsym; i++) {
+    const K = i + syndShift;
+    let delta = synd[K];
+    for (let j = 1; j < errLoc.length; j++)
+      delta ^= gfMul(errLoc[errLoc.length - 1 - j], synd[K - j]);
+    oldLoc = oldLoc.concat([0]);
+    if (delta !== 0) {
+      if (oldLoc.length > errLoc.length) {
+        const newLoc = gfPolyScale(oldLoc, delta);
+        oldLoc = gfPolyScale(errLoc, gfInverse(delta));
+        errLoc = newLoc;
+      }
+      errLoc = gfPolyAdd(errLoc, gfPolyScale(oldLoc, delta));
+    }
+  }
+  // strip leading zeros
+  while (errLoc.length && errLoc[0] === 0) errLoc.shift();
+  const errs = errLoc.length - 1;
+  if (errs * 2 > nsym) throw new Error("Too many errors to correct");
+  return errLoc;
+}
+function rsFindErrors(errLocRev, nmess) {
+  const errs = errLocRev.length - 1;
+  const errPos = [];
+  for (let i = 0; i < nmess; i++)
+    if (gfPolyEval(errLocRev, gfPow2(i)) === 0) errPos.push(nmess - 1 - i);
+  if (errPos.length !== errs) throw new Error("Could not locate errors");
+  return errPos;
+}
+function rsFindErrataLocator(coefPos) {
+  let eLoc = [1];
+  for (const p of coefPos) eLoc = gfPolyMul(eLoc, gfPolyAdd([1], [gfPow2(p), 0]));
+  return eLoc;
+}
+function rsFindErrorEvaluator(synd, errLoc, nsym) {
+  const divisor = [1].concat(new Array(nsym + 1).fill(0)); // x^(nsym+1)
+  const [, rem] = gfPolyDiv(gfPolyMul(synd, errLoc), divisor);
+  return rem;
+}
+function rsCorrectErrata(msg, synd, errPos) {
+  const coefPos = errPos.map((p) => msg.length - 1 - p);
+  const errLoc = rsFindErrataLocator(coefPos);
+  const syndRev = synd.slice().reverse();
+  const errEval = rsFindErrorEvaluator(syndRev, errLoc, errLoc.length - 1).reverse();
+  const X = [];
+  for (let i = 0; i < coefPos.length; i++) {
+    const l = 255 - coefPos[i];
+    X.push(gfPow2(-l));
+  }
+  const E = new Array(msg.length).fill(0);
+  for (let i = 0; i < X.length; i++) {
+    const Xi = X[i];
+    const XiInv = gfInverse(Xi);
+    let errLocPrime = 1;
+    for (let j = 0; j < X.length; j++)
+      if (j !== i) errLocPrime = gfMul(errLocPrime, 1 ^ gfMul(XiInv, X[j]));
+    let y = gfPolyEval(errEval.slice().reverse(), XiInv);
+    y = gfMul(Xi, y);
+    if (errLocPrime === 0) throw new Error("Forney denominator zero");
+    E[errPos[i]] = gfMul(y, gfInverse(errLocPrime));
+  }
+  return gfPolyAdd(msg, E);
+}
+// Correct a full RS block (data + ec), return corrected full block (same length).
+function rsCorrectMsg(msgIn, nsym) {
+  let msg = msgIn.slice();
+  const synd = rsCalcSyndromes(msg, nsym);
+  let maxS = 0;
+  for (const s of synd) if (s > maxS) maxS = s;
+  if (maxS === 0) return msg; // no errors
+  const errLoc = rsFindErrorLocator(synd, nsym);
+  const errPos = rsFindErrors(errLoc.slice().reverse(), msg.length);
+  msg = rsCorrectErrata(msg, synd, errPos);
+  const synd2 = rsCalcSyndromes(msg, nsym);
+  let maxS2 = 0;
+  for (const s of synd2) if (s > maxS2) maxS2 = s;
+  if (maxS2 !== 0) throw new Error("RS decode failed to converge");
+  return msg;
+}
+
+// ============================================================================
+// QR spec tables (versions 1..10)
+// EC_TABLE[version][ecc] = [ecCodewordsPerBlock, [[numBlocks, dataPerBlock], ...]]
+// ============================================================================
+const EC_TABLE = {
+  1: { L: [7, [[1, 19]]], M: [10, [[1, 16]]], Q: [13, [[1, 13]]], H: [17, [[1, 9]]] },
+  2: { L: [10, [[1, 34]]], M: [16, [[1, 28]]], Q: [22, [[1, 22]]], H: [28, [[1, 16]]] },
+  3: { L: [15, [[1, 55]]], M: [26, [[1, 44]]], Q: [18, [[2, 17]]], H: [22, [[2, 13]]] },
+  4: { L: [20, [[1, 80]]], M: [18, [[2, 32]]], Q: [26, [[2, 24]]], H: [16, [[4, 9]]] },
+  5: { L: [26, [[1, 108]]], M: [24, [[2, 43]]], Q: [18, [[2, 15], [2, 16]]], H: [22, [[2, 11], [2, 12]]] },
+  6: { L: [18, [[2, 68]]], M: [16, [[4, 27]]], Q: [24, [[4, 19]]], H: [28, [[4, 15]]] },
+  7: { L: [20, [[2, 78]]], M: [18, [[4, 31]]], Q: [18, [[2, 14], [4, 15]]], H: [26, [[4, 13], [1, 14]]] },
+  8: { L: [24, [[2, 97]]], M: [22, [[2, 38], [2, 39]]], Q: [22, [[4, 18], [2, 19]]], H: [26, [[4, 14], [2, 15]]] },
+  9: { L: [30, [[2, 116]]], M: [22, [[3, 36], [2, 37]]], Q: [20, [[4, 16], [4, 17]]], H: [24, [[4, 12], [4, 13]]] },
+  10: { L: [18, [[2, 68], [2, 69]]], M: [26, [[4, 43], [1, 44]]], Q: [24, [[6, 19], [2, 20]]], H: [28, [[6, 15], [2, 16]]] },
+};
+
+// Alignment pattern center positions per version (empty for v1).
+const ALIGN_POS = {
+  1: [], 2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30],
+  6: [6, 34], 7: [6, 22, 38], 8: [6, 24, 42], 9: [6, 26, 46], 10: [6, 28, 50],
+};
+
+// ECC 2-bit format value: L=01, M=00, Q=11, H=10
+const ECC_FORMAT_BITS = { L: 1, M: 0, Q: 3, H: 2 };
+const ECC_FROM_FORMAT = { 1: "L", 0: "M", 3: "Q", 2: "H" };
+
+function dataCodewordsFor(version, ecc) {
+  const [, blocks] = EC_TABLE[version][ecc];
+  let n = 0;
+  for (const [cnt, dpb] of blocks) n += cnt * dpb;
+  return n;
+}
+function blockStructure(version, ecc) {
+  const [ecPerBlock, blocks] = EC_TABLE[version][ecc];
+  const list = [];
+  for (const [cnt, dpb] of blocks)
+    for (let i = 0; i < cnt; i++) list.push(dpb);
+  return { ecPerBlock, dataLens: list };
+}
+
+// ============================================================================
+// UTF-8 (self-contained; ASCII payloads pass through unchanged)
+// ============================================================================
+function utf8Encode(str) {
+  const out = [];
+  for (const ch of str) {
+    let cp = ch.codePointAt(0);
+    if (cp < 0x80) out.push(cp);
+    else if (cp < 0x800) out.push(0xc0 | (cp >> 6), 0x80 | (cp & 0x3f));
+    else if (cp < 0x10000) out.push(0xe0 | (cp >> 12), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
+    else out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
+  }
+  return out;
+}
+function utf8Decode(bytes) {
+  let out = "";
+  let i = 0;
+  while (i < bytes.length) {
+    const b = bytes[i++];
+    if (b < 0x80) out += String.fromCodePoint(b);
+    else if ((b >> 5) === 0x6) out += String.fromCodePoint(((b & 0x1f) << 6) | (bytes[i++] & 0x3f));
+    else if ((b >> 4) === 0xe) {
+      const b1 = bytes[i++], b2 = bytes[i++];
+      out += String.fromCodePoint(((b & 0xf) << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f));
+    } else {
+      const b1 = bytes[i++], b2 = bytes[i++], b3 = bytes[i++];
+      out += String.fromCodePoint(((b & 0x7) << 18) | ((b1 & 0x3f) << 12) | ((b2 & 0x3f) << 6) | (b3 & 0x3f));
+    }
+  }
+  return out;
+}
+
+// ============================================================================
+// Format & version information (BCH)
+// ============================================================================
+function encodeFormatBits(ecc, mask) {
+  const data = (ECC_FORMAT_BITS[ecc] << 3) | mask; // 5 bits
+  let rem = data;
+  for (let i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >> 9) * 0x537);
+  return ((data << 10) | (rem & 0x3ff)) ^ 0x5412; // 15 bits
+}
+function encodeVersionBits(version) {
+  let rem = version;
+  for (let i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >> 11) * 0x1f25);
+  return (version << 12) | (rem & 0xfff); // 18 bits
+}
+const bit = (x, i) => (x >> i) & 1;
+
+// ============================================================================
+// Data-mask patterns
+// ============================================================================
+function maskFn(mask, r, c) {
+  switch (mask) {
+    case 0: return (r + c) % 2 === 0;
+    case 1: return r % 2 === 0;
+    case 2: return c % 3 === 0;
+    case 3: return (r + c) % 3 === 0;
+    case 4: return (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0;
+    case 5: return ((r * c) % 2) + ((r * c) % 3) === 0;
+    case 6: return (((r * c) % 2) + ((r * c) % 3)) % 2 === 0;
+    case 7: return (((r + c) % 2) + ((r * c) % 3)) % 2 === 0;
+  }
+  return false;
+}
+
+// ============================================================================
+// Matrix construction (function patterns + reserved map)
+// ============================================================================
+function newMatrix(size, fill) {
+  const m = new Array(size);
+  for (let i = 0; i < size; i++) m[i] = new Array(size).fill(fill);
+  return m;
+}
+
+// Build base matrix with all function patterns placed and reserved[] marking
+// every module that data placement must skip (function + format + version areas).
+function buildBaseMatrix(version) {
+  const size = version * 4 + 17;
+  const m = newMatrix(size, 0);
+  const reserved = newMatrix(size, false);
+
+  function placeFinder(r0, c0) {
+    for (let dr = -1; dr <= 7; dr++)
+      for (let dc = -1; dc <= 7; dc++) {
+        const r = r0 + dr, c = c0 + dc;
+        if (r < 0 || r >= size || c < 0 || c >= size) continue;
+        reserved[r][c] = true;
+        const inside = dr >= 0 && dr <= 6 && dc >= 0 && dc <= 6;
+        let dark = false;
+        if (inside) {
+          const border = dr === 0 || dr === 6 || dc === 0 || dc === 6;
+          const center = dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4;
+          dark = border || center;
+        }
+        m[r][c] = dark ? 1 : 0;
+      }
+  }
+  placeFinder(0, 0);
+  placeFinder(0, size - 7);
+  placeFinder(size - 7, 0);
+
+  // Timing patterns
+  for (let i = 8; i < size - 8; i++) {
+    if (!reserved[6][i]) { m[6][i] = i % 2 === 0 ? 1 : 0; reserved[6][i] = true; }
+    if (!reserved[i][6]) { m[i][6] = i % 2 === 0 ? 1 : 0; reserved[i][6] = true; }
+  }
+
+  // Alignment patterns
+  const pos = ALIGN_POS[version];
+  const maxPos = size - 7;
+  for (const r of pos)
+    for (const c of pos) {
+      if ((r === 6 && c === 6) || (r === 6 && c === maxPos) || (r === maxPos && c === 6)) continue;
+      for (let dr = -2; dr <= 2; dr++)
+        for (let dc = -2; dc <= 2; dc++) {
+          const rr = r + dr, cc = c + dc;
+          reserved[rr][cc] = true;
+          const dark = Math.max(Math.abs(dr), Math.abs(dc)) !== 1;
+          m[rr][cc] = dark ? 1 : 0;
+        }
+    }
+
+  // Dark module
+  m[size - 8][8] = 1;
+  reserved[size - 8][8] = true;
+
+  // Reserve format info areas
+  for (let i = 0; i <= 8; i++) {
+    if (i !== 6) { reserved[8][i] = true; reserved[i][8] = true; }
+  }
+  reserved[8][7] = true; // (already covered by i<=8 loop except skip 6) — safe
+  for (let i = 0; i < 8; i++) reserved[size - 1 - i][8] = true;
+  for (let i = 0; i < 8; i++) reserved[8][size - 1 - i] = true;
+
+  // Reserve + draw version info (v >= 7)
+  if (version >= 7) {
+    const vbits = encodeVersionBits(version);
+    for (let i = 0; i < 18; i++) {
+      const b = bit(vbits, i);
+      const a = i % 3;
+      const d = Math.floor(i / 3);
+      // bottom-left block
+      m[size - 11 + a][d] = b;
+      reserved[size - 11 + a][d] = true;
+      // top-right block
+      m[d][size - 11 + a] = b;
+      reserved[d][size - 11 + a] = true;
+    }
+  }
+
+  return { size, m, reserved };
+}
+
+// Zig-zag data module placement order (skips reserved modules).
+function moduleSequence(size, reserved) {
+  const seq = [];
+  let up = true;
+  for (let col = size - 1; col > 0; col -= 2) {
+    if (col === 6) col = 5; // skip vertical timing column
+    for (let i = 0; i < size; i++) {
+      const row = up ? size - 1 - i : i;
+      for (const c of [col, col - 1]) {
+        if (!reserved[row][c]) seq.push([row, c]);
+      }
+    }
+    up = !up;
+  }
+  return seq;
+}
+
+// ============================================================================
+// Interleaving
+// ============================================================================
+function interleaveCodewords(dataBlocks, ecBlocks) {
+  const out = [];
+  const maxData = Math.max(...dataBlocks.map((b) => b.length));
+  for (let i = 0; i < maxData; i++)
+    for (const b of dataBlocks) if (i < b.length) out.push(b[i]);
+  const maxEc = Math.max(...ecBlocks.map((b) => b.length));
+  for (let i = 0; i < maxEc; i++)
+    for (const b of ecBlocks) if (i < b.length) out.push(b[i]);
+  return out;
+}
+
+// ============================================================================
+// Penalty scoring (N1=3, N2=3, N3=40, N4=10)
+// ============================================================================
+function computePenalty(m, size) {
+  let penalty = 0;
+  // N1: runs of >=5 in rows and columns
+  for (let r = 0; r < size; r++) {
+    let run = 1;
+    for (let c = 1; c < size; c++) {
+      if (m[r][c] === m[r][c - 1]) { run++; if (run === 5) penalty += 3; else if (run > 5) penalty += 1; }
+      else run = 1;
+    }
+  }
+  for (let c = 0; c < size; c++) {
+    let run = 1;
+    for (let r = 1; r < size; r++) {
+      if (m[r][c] === m[r - 1][c]) { run++; if (run === 5) penalty += 3; else if (run > 5) penalty += 1; }
+      else run = 1;
+    }
+  }
+  // N2: 2x2 blocks of same color
+  for (let r = 0; r < size - 1; r++)
+    for (let c = 0; c < size - 1; c++) {
+      const v = m[r][c];
+      if (v === m[r][c + 1] && v === m[r + 1][c] && v === m[r + 1][c + 1]) penalty += 3;
+    }
+  // N3: finder-like patterns 10111010000 or 00001011101 in rows and columns
+  const p1 = [1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0];
+  const p2 = [0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1];
+  const matchAt = (get, i) => {
+    let m1 = true, m2 = true;
+    for (let k = 0; k < 11; k++) {
+      const v = get(i + k);
+      if (v !== p1[k]) m1 = false;
+      if (v !== p2[k]) m2 = false;
+    }
+    return (m1 ? 1 : 0) + (m2 ? 1 : 0);
+  };
+  for (let r = 0; r < size; r++)
+    for (let c = 0; c <= size - 11; c++)
+      penalty += 40 * matchAt((x) => m[r][x], c);
+  for (let c = 0; c < size; c++)
+    for (let r = 0; r <= size - 11; r++)
+      penalty += 40 * matchAt((x) => m[x][c], r);
+  // N4: dark proportion
+  let dark = 0;
+  for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) dark += m[r][c];
+  const ratio = (dark * 100) / (size * size);
+  penalty += Math.floor(Math.abs(ratio - 50) / 5) * 10;
+  return penalty;
+}
+
+// ============================================================================
+// ENCODE
+// ============================================================================
+function qrEncode(text, opts = {}) {
+  const ecc = opts.ecc || "M";
+  if (!ECC_FORMAT_BITS.hasOwnProperty(ecc)) throw new Error("Bad ecc: " + ecc);
+  const bytes = utf8Encode(String(text));
+
+  // Pick smallest version 1..10 that fits.
+  let version = 0;
+  for (let v = 1; v <= 10; v++) {
+    const countBits = v <= 9 ? 8 : 16;
+    const needBits = 4 + countBits + 8 * bytes.length;
+    const cap = dataCodewordsFor(v, ecc) * 8;
+    if (needBits <= cap) { version = v; break; }
+  }
+  if (version === 0) throw new Error("Data too long for version <= 10 at ECC " + ecc);
+
+  const dataCW = dataCodewordsFor(version, ecc);
+  const countBits = version <= 9 ? 8 : 16;
+
+  // Build bit stream.
+  const bits = [];
+  const push = (val, len) => { for (let i = len - 1; i >= 0; i--) bits.push((val >> i) & 1); };
+  push(0b0100, 4); // byte mode
+  push(bytes.length, countBits);
+  for (const b of bytes) push(b, 8);
+  const capBits = dataCW * 8;
+  push(0, Math.min(4, capBits - bits.length)); // terminator
+  while (bits.length % 8 !== 0) bits.push(0);
+  const padBytes = [0xec, 0x11];
+  let pi = 0;
+  while (bits.length < capBits) push(padBytes[pi++ % 2], 8);
+
+  // Bits -> data codewords.
+  const dataCodewords = [];
+  for (let i = 0; i < bits.length; i += 8) {
+    let v = 0;
+    for (let k = 0; k < 8; k++) v = (v << 1) | bits[i + k];
+    dataCodewords.push(v);
+  }
+
+  // Split into blocks, compute EC per block.
+  const { ecPerBlock, dataLens } = blockStructure(version, ecc);
+  const dataBlocks = [];
+  const ecBlocks = [];
+  let off = 0;
+  for (const dl of dataLens) {
+    const blk = dataCodewords.slice(off, off + dl);
+    off += dl;
+    dataBlocks.push(blk);
+    const full = rsEncode(blk, ecPerBlock);
+    ecBlocks.push(full.slice(dl));
+  }
+  const allCW = interleaveCodewords(dataBlocks, ecBlocks);
+
+  // Place data bits into base matrix.
+  const { size, m: base, reserved } = buildBaseMatrix(version);
+  const seq = moduleSequence(size, reserved);
+  // Flatten codewords to bit list.
+  const dataBits = [];
+  for (const cw of allCW) for (let k = 7; k >= 0; k--) dataBits.push((cw >> k) & 1);
+
+  const filled = base.map((row) => row.slice());
+  for (let i = 0; i < seq.length; i++) {
+    const [r, c] = seq[i];
+    filled[r][c] = i < dataBits.length ? dataBits[i] : 0; // remainder bits = 0
+  }
+
+  // Try all 8 masks, choose lowest penalty.
+  let best = null;
+  for (let mask = 0; mask < 8; mask++) {
+    const cand = filled.map((row) => row.slice());
+    for (const [r, c] of seq) if (maskFn(mask, r, c)) cand[r][c] ^= 1;
+    drawFormatBits(cand, size, ecc, mask);
+    const p = computePenalty(cand, size);
+    if (best === null || p < best.penalty) best = { penalty: p, mask, modules: cand };
+  }
+  return { size, modules: best.modules };
+}
+
+function drawFormatBits(m, size, ecc, mask) {
+  const f = encodeFormatBits(ecc, mask);
+  for (let i = 0; i <= 5; i++) m[8][i] = bit(f, i);
+  m[8][7] = bit(f, 6);
+  m[8][8] = bit(f, 7);
+  m[7][8] = bit(f, 8);
+  for (let i = 9; i <= 14; i++) m[14 - i][8] = bit(f, i);
+  for (let i = 0; i <= 7; i++) m[size - 1 - i][8] = bit(f, i);
+  for (let i = 8; i <= 14; i++) m[8][size - 15 + i] = bit(f, i);
+  m[size - 8][8] = 1; // dark module
+}
+
+// ============================================================================
+// DECODE from an ideal 0/1 matrix
+// ============================================================================
+function qrDecodeMatrix(modules) {
+  const size = modules.length;
+  if (size < 21 || (size - 17) % 4 !== 0) throw new Error("Bad matrix size: " + size);
+  const version = (size - 17) / 4;
+  if (version < 1 || version > 10) throw new Error("Unsupported version: " + version);
+
+  // Read format info (first copy) and error-correct against all 32 candidates.
+  let read = 0;
+  const rd = (bitIdx, r, c) => { read |= (modules[r][c] & 1) << bitIdx; };
+  for (let i = 0; i <= 5; i++) rd(i, 8, i);
+  rd(6, 8, 7);
+  rd(7, 8, 8);
+  rd(8, 7, 8);
+  for (let i = 9; i <= 14; i++) rd(i, 14 - i, 8);
+
+  let bestEcc = null, bestMask = -1, bestDist = 99;
+  for (const eccName of ["L", "M", "Q", "H"])
+    for (let mask = 0; mask < 8; mask++) {
+      const cand = encodeFormatBits(eccName, mask);
+      let d = 0, x = cand ^ read;
+      while (x) { d += x & 1; x >>= 1; }
+      if (d < bestDist) { bestDist = d; bestEcc = eccName; bestMask = mask; }
+    }
+  if (bestDist > 3) throw new Error("Format info unrecoverable");
+  const ecc = bestEcc, mask = bestMask;
+
+  // Rebuild reserved map and read data modules (unmasking as we go).
+  const { reserved } = buildBaseMatrix(version);
+  const seq = moduleSequence(size, reserved);
+  const dataBits = [];
+  for (const [r, c] of seq) {
+    let v = modules[r][c] & 1;
+    if (maskFn(mask, r, c)) v ^= 1;
+    dataBits.push(v);
+  }
+
+  // Bits -> codewords (total codewords for version).
+  const totalCW = countTotalCodewords(version);
+  const stream = [];
+  for (let i = 0; i < totalCW; i++) {
+    let v = 0;
+    for (let k = 0; k < 8; k++) v = (v << 1) | (dataBits[i * 8 + k] || 0);
+    stream.push(v);
+  }
+
+  // De-interleave into blocks.
+  const { ecPerBlock, dataLens } = blockStructure(version, ecc);
+  const numBlocks = dataLens.length;
+  const totalData = dataLens.reduce((a, b) => a + b, 0);
+  const dataStream = stream.slice(0, totalData);
+  const ecStream = stream.slice(totalData);
+
+  const blockData = dataLens.map(() => []);
+  const maxData = Math.max(...dataLens);
+  let idx = 0;
+  for (let i = 0; i < maxData; i++)
+    for (let b = 0; b < numBlocks; b++)
+      if (i < dataLens[b]) blockData[b].push(dataStream[idx++]);
+
+  const blockEc = dataLens.map(() => []);
+  idx = 0;
+  for (let i = 0; i < ecPerBlock; i++)
+    for (let b = 0; b < numBlocks; b++) blockEc[b].push(ecStream[idx++]);
+
+  // RS-correct each block, gather corrected data codewords.
+  const corrected = [];
+  for (let b = 0; b < numBlocks; b++) {
+    const full = blockData[b].concat(blockEc[b]);
+    const fixed = rsCorrectMsg(full, ecPerBlock);
+    for (let i = 0; i < dataLens[b]; i++) corrected.push(fixed[i]);
+  }
+
+  // Parse byte-mode payload.
+  return parsePayload(corrected, version);
+}
+
+function countTotalCodewords(version) {
+  // total codewords = data + ec (independent of ecc): use L structure sum
+  const [ecPerBlock, blocks] = EC_TABLE[version]["L"];
+  let n = 0;
+  for (const [cnt, dpb] of blocks) n += cnt * (dpb + ecPerBlock);
+  return n;
+}
+
+function parsePayload(codewords, version) {
+  // Bit reader over codewords.
+  const allBits = [];
+  for (const cw of codewords) for (let k = 7; k >= 0; k--) allBits.push((cw >> k) & 1);
+  let p = 0;
+  const readBits = (n) => { let v = 0; for (let i = 0; i < n; i++) v = (v << 1) | (allBits[p++] || 0); return v; };
+
+  const mode = readBits(4);
+  if (mode !== 0b0100) throw new Error("Unsupported mode indicator: " + mode);
+  const countBits = version <= 9 ? 8 : 16;
+  const len = readBits(countBits);
+  const bytes = [];
+  for (let i = 0; i < len; i++) bytes.push(readBits(8));
+  return utf8Decode(bytes);
+}
+
+// ============================================================================
+// DECODE from a photographed / rendered grayscale image (best-effort)
+// ============================================================================
+function qrDecodeImage(gray, width, height) {
+  try {
+    const bin = otsuBinarize(gray, width, height); // 1 = dark
+    const finders = findFinderPatterns(bin, width, height);
+    if (finders.length < 3) return null;
+
+    // Choose the 3 strongest finder clusters.
+    finders.sort((a, b) => b.count - a.count);
+    const cand = finders.slice(0, Math.min(6, finders.length));
+
+    // Try combinations of 3 to find a decodable arrangement.
+    const combos = choose3(cand.length);
+    for (const [i, j, k] of combos) {
+      const res = tryDecodeWithFinders(bin, width, height, cand[i], cand[j], cand[k]);
+      if (res !== null) return res;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function choose3(n) {
+  const out = [];
+  for (let a = 0; a < n; a++)
+    for (let b = a + 1; b < n; b++)
+      for (let c = b + 1; c < n; c++) out.push([a, b, c]);
+  return out;
+}
+
+function otsuBinarize(gray, width, height) {
+  const hist = new Array(256).fill(0);
+  const total = width * height;
+  for (let i = 0; i < total; i++) hist[gray[i] | 0]++;
+  let sum = 0;
+  for (let t = 0; t < 256; t++) sum += t * hist[t];
+  let sumB = 0, wB = 0, maxVar = -1, thresh = 127;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (wB === 0) continue;
+    const wF = total - wB;
+    if (wF === 0) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > maxVar) { maxVar = between; thresh = t; }
+  }
+  const bin = new Uint8Array(total);
+  for (let i = 0; i < total; i++) bin[i] = gray[i] <= thresh ? 1 : 0; // dark=1
+  return bin;
+}
+
+// Scan rows and columns for the 1:1:3:1:1 finder ratio; return clustered centers.
+function findFinderPatterns(bin, width, height) {
+  const get = (x, y) => bin[y * width + x];
+  const candidates = [];
+
+  const checkRatios = (counts) => {
+    // counts: 5 run lengths of alternating dark-light-dark-light-dark
+    const total = counts[0] + counts[1] + counts[2] + counts[3] + counts[4];
+    if (total < 7) return false;
+    const modSize = total / 7;
+    const tol = modSize / 2 + 0.5;
+    return (
+      Math.abs(counts[0] - modSize) < tol &&
+      Math.abs(counts[1] - modSize) < tol &&
+      Math.abs(counts[2] - 3 * modSize) < 3 * tol &&
+      Math.abs(counts[3] - modSize) < tol &&
+      Math.abs(counts[4] - modSize) < tol
+    );
+  };
+
+  // Horizontal scan (ZXing-style rolling 5-run window).
+  for (let y = 0; y < height; y++) {
+    const counts = [0, 0, 0, 0, 0];
+    let state = 0; // even = dark run, odd = light run
+    for (let x = 0; x < width; x++) {
+      const v = get(x, y);
+      if (v === 1) { // dark pixel
+        if ((state & 1) === 1) state++; // transition light -> dark
+        counts[state]++;
+      } else { // light pixel
+        if ((state & 1) === 0) { // was dark run
+          if (state === 4) {
+            // Completed dark-light-dark-light-dark; current pixel starts trailing light.
+            if (checkRatios(counts)) {
+              const total = counts[0] + counts[1] + counts[2] + counts[3] + counts[4];
+              const cx = x - counts[4] - counts[3] - counts[2] / 2;
+              candidates.push({ x: cx, y: y + 0.5, mod: total / 7, count: 1 });
+            }
+            // Roll window: keep last dark-light-dark as new first three runs.
+            counts[0] = counts[2];
+            counts[1] = counts[3];
+            counts[2] = counts[4];
+            counts[3] = 1; // current light pixel
+            counts[4] = 0;
+            state = 3;
+          } else {
+            state++;
+            counts[state]++;
+          }
+        } else {
+          counts[state]++; // continue light run
+        }
+      }
+    }
+  }
+
+  // Cluster candidates that are close together.
+  const clusters = [];
+  for (const c of candidates) {
+    let merged = false;
+    for (const cl of clusters) {
+      if (Math.abs(cl.x - c.x) < cl.mod * 2 && Math.abs(cl.y - c.y) < cl.mod * 2) {
+        cl.x = (cl.x * cl.count + c.x) / (cl.count + 1);
+        cl.y = (cl.y * cl.count + c.y) / (cl.count + 1);
+        cl.mod = (cl.mod * cl.count + c.mod) / (cl.count + 1);
+        cl.count++;
+        merged = true;
+        break;
+      }
+    }
+    if (!merged) clusters.push({ x: c.x, y: c.y, mod: c.mod, count: 1 });
+  }
+
+  // Verify each cluster with a vertical run through its center.
+  const verified = [];
+  for (const cl of clusters) {
+    if (verifyFinderVertical(bin, width, height, Math.round(cl.x), Math.round(cl.y), cl.mod))
+      verified.push(cl);
+  }
+  return verified.length >= 3 ? verified : clusters;
+}
+
+function verifyFinderVertical(bin, width, height, cx, cy, mod) {
+  if (cx < 0 || cx >= width || cy < 0 || cy >= height) return false;
+  const get = (y) => bin[y * width + cx];
+  if (get(cy) !== 1) return false;
+  // count center dark run
+  let up = 0, down = 0;
+  for (let y = cy; y >= 0 && get(y) === 1; y--) up++;
+  for (let y = cy + 1; y < height && get(y) === 1; y++) down++;
+  const center = up + down;
+  if (center < mod || center > 5 * mod) return false;
+  return true;
+}
+
+// Given three finder clusters, identify orientation, sample grid, decode.
+function tryDecodeWithFinders(bin, width, height, f0, f1, f2) {
+  try {
+    const pts = [f0, f1, f2];
+    // Top-left = vertex whose angle is ~90°.
+    let tlIdx = 0, bestCos = 2;
+    for (let i = 0; i < 3; i++) {
+      const a = pts[(i + 1) % 3], b = pts[(i + 2) % 3], o = pts[i];
+      const v1x = a.x - o.x, v1y = a.y - o.y, v2x = b.x - o.x, v2y = b.y - o.y;
+      const dot = v1x * v2x + v1y * v2y;
+      const cos = dot / (Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y) + 1e-9);
+      if (Math.abs(cos) < bestCos) { bestCos = Math.abs(cos); tlIdx = i; }
+    }
+    const tl = pts[tlIdx];
+    let a = pts[(tlIdx + 1) % 3], b = pts[(tlIdx + 2) % 3];
+    // Cross product to decide which is top-right vs bottom-left.
+    // In image coords (x right, y down): (TR-TL) × (BL-TL) > 0.
+    const cross = (a.x - tl.x) * (b.y - tl.y) - (a.y - tl.y) * (b.x - tl.x);
+    let tr, bl;
+    if (cross > 0) { tr = a; bl = b; } else { tr = b; bl = a; }
+
+    const modSize = (tl.mod + tr.mod + bl.mod) / 3;
+    const distTR = Math.hypot(tr.x - tl.x, tr.y - tl.y);
+    const distBL = Math.hypot(bl.x - tl.x, bl.y - tl.y);
+    const dim = Math.round((distTR + distBL) / 2 / modSize) + 7;
+    // Snap to nearest valid QR size 4v+17.
+    let size = dim;
+    if ((size - 17) % 4 !== 0) size = Math.round((size - 17) / 4) * 4 + 17;
+    const version = (size - 17) / 4;
+    if (version < 1 || version > 10) return null;
+
+    // Finder centers correspond to module coords (3,3),(3,size-4),(size-4,3).
+    // Estimate bottom-right center via parallelogram.
+    const brx = tr.x + bl.x - tl.x;
+    const bry = tr.y + bl.y - tl.y;
+
+    // Bilinear map module(r,c) center -> image pixel.
+    const span = size - 7; // module distance between finder centers
+    const sample = (r, c) => {
+      const u = (c - 3) / span;
+      const v = (r - 3) / span;
+      const x = (1 - u) * (1 - v) * tl.x + u * (1 - v) * tr.x + (1 - u) * v * bl.x + u * v * brx;
+      const y = (1 - u) * (1 - v) * tl.y + u * (1 - v) * tr.y + (1 - u) * v * bl.y + u * v * bry;
+      const xi = Math.round(x), yi = Math.round(y);
+      if (xi < 0 || xi >= width || yi < 0 || yi >= height) return 0;
+      return bin[yi * width + xi] & 1;
+    };
+
+    const m = newMatrix(size, 0);
+    for (let r = 0; r < size; r++)
+      for (let c = 0; c < size; c++) m[r][c] = sample(r, c);
+
+    return qrDecodeMatrix(m);
+  } catch (e) {
+    return null;
+  }
+}
+
+const QR={qrEncode:qrEncode,qrDecodeMatrix:qrDecodeMatrix,qrDecodeImage:qrDecodeImage};
 /* ============================ 核心逻辑(与 _dev/core.mjs 同源) ============================ */
 function makeRng(seed){let a=seed>>>0;return function(){a|=0;a=(a+0x6d2b79f5)|0;let t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return ((t^(t>>>14))>>>0)/4294967296;};}
 function randInt(rng,n){return Math.floor(rng()*n);}
 function shuffle(rng,arr){for(let i=arr.length-1;i>0;i--){const j=randInt(rng,i+1);[arr[i],arr[j]]=[arr[j],arr[i]];}return arr;}
 function wpick(rng,weights){const e=Object.entries(weights);let tot=0;for(const[,w]of e)tot+=w;let x=rng()*tot;for(const[k,w]of e){x-=w;if(x<0)return k;}return e[e.length-1][0];}
-
 function latinSquare(N,rng){
   const g=Array.from({length:N},()=>Array(N).fill(0));const rowU=Array(N).fill(0),colU=Array(N).fill(0);
   function bt(pos){if(pos===N*N)return true;const r=(pos/N)|0,c=pos%N;const cand=[];for(let v=1;v<=N;v++){const b=1<<v;if(!(rowU[r]&b)&&!(colU[c]&b))cand.push(v);}shuffle(rng,cand);
     for(const v of cand){const b=1<<v;g[r][c]=v;rowU[r]|=b;colU[c]|=b;if(bt(pos+1))return true;rowU[r]&=~b;colU[c]&=~b;}g[r][c]=0;return false;}
   bt(0);return g;
 }
-
 function countSolutions(N,cages,limit){
   limit=limit||2;
   const cc=Array.from({length:N},()=>Array(N).fill(-1));cages.forEach((cg,i)=>cg.cells.forEach(([r,c])=>cc[r][c]=i));
@@ -212,7 +1116,6 @@ function countSolutions(N,cages,limit){
       cnt[ci]--;sum[ci]-=v;prod[ci]/=v;vals[ci].pop();rowU[r]&=~b;colU[c]&=~b;if(count>=limit)return;}}
   bt(0);return count;
 }
-
 const DIFF={
   1:{sizes:{1:3,2:5},ops2:{'+':4,'-':4},opsM:{'+':1}},
   2:{sizes:{1:2,2:5,3:2},ops2:{'+':4,'-':3,'*':1},opsM:{'+':2,'*':1}},
@@ -244,7 +1147,19 @@ function generate(N,difficulty,rng,opts){opts=opts||{};const diff=DIFF[difficult
   for(let a=0;a<maxA;a++){if(a>0&&a%25===0)solution=latinSquare(N,rng);cages=buildCages(N,solution,rng,diff);if(countSolutions(N,cages,2)===1)return{N,difficulty,solution,cages};}
   let g=0;while(countSolutions(N,cages,2)!==1&&g++<N*N){if(!splitOne(cages,solution,N,rng))break;}return{N,difficulty,solution,cages};
 }
-
+function cellCageGrid(N,cages){const g=Array.from({length:N},()=>Array(N).fill(-1));cages.forEach((cg,i)=>cg.cells.forEach(([r,c])=>g[r][c]=i));return g;}
+/* 笼四色染色:相邻笼异色,DSATUR 顺序 + 4 色回溯(平面图必成) */
+function colorCages(N,cages){
+  const c2c=cellCageGrid(N,cages);const adj=cages.map(()=>new Set());
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){const id=c2c[r][c];
+    if(c<N-1){const i2=c2c[r][c+1];if(i2!==id){adj[id].add(i2);adj[i2].add(id);}}
+    if(r<N-1){const i2=c2c[r+1][c];if(i2!==id){adj[id].add(i2);adj[i2].add(id);}}}
+  const order=cages.map((_,i)=>i).sort((a,b)=>adj[b].size-adj[a].size);const color=new Array(cages.length).fill(-1);
+  function bt(k){if(k===order.length)return true;const v=order[k];const used=new Set();for(const u of adj[v])if(color[u]>=0)used.add(color[u]);
+    for(let col=0;col<4;col++){if(used.has(col))continue;color[v]=col;if(bt(k+1))return true;color[v]=-1;}return false;}
+  if(!bt(0)){for(const v of order){const used=new Set();for(const u of adj[v])if(color[u]>=0)used.add(color[u]);let col=0;while(used.has(col))col++;color[v]=col;}}
+  return color;
+}
 /* ---------------- ShareCode ---------------- */
 const ALPHABET='23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz_=+^$!()';
 const VERSION=1;const OPS2=['+','-','*','/'];
@@ -257,7 +1172,6 @@ BitWriter.prototype.write=function(v,n){for(let i=n-1;i>=0;i--)this.bits.push((v
 BitWriter.prototype.toChars=function(){const o=[];for(let i=0;i<this.bits.length;i+=6){let v=0;for(let j=0;j<6;j++)v=(v<<1)|(this.bits[i+j]||0);o.push(ALPHABET[v]);}return o.join('');};
 function BitReader(chars){this.bits=[];for(const ch of chars){const v=ALPHABET.indexOf(ch);for(let j=5;j>=0;j--)this.bits.push((v>>j)&1);}this.pos=0;}
 BitReader.prototype.read=function(n){let v=0;for(let i=0;i<n;i++)v=(v<<1)|(this.bits[this.pos++]||0);return v;};
-function cellCageGrid(N,cages){const g=Array.from({length:N},()=>Array(N).fill(-1));cages.forEach((cg,i)=>cg.cells.forEach(([r,c])=>g[r][c]=i));return g;}
 function checksumChar(s){let sum=0;for(const ch of s)sum=(sum+ALPHABET.indexOf(ch))%64;return ALPHABET[sum];}
 function encodeShareCode(p){const{N,difficulty,solution,cages}=p;const w=new BitWriter();w.write(N,4);w.write(difficulty,3);const cg=cellCageGrid(N,cages);
   for(let r=0;r<N;r++)for(let c=0;c<N;c++){if(c<N-1)w.write(cg[r][c]===cg[r][c+1]?1:0,1);if(r<N-1)w.write(cg[r][c]===cg[r+1][c]?1:0,1);}
@@ -286,145 +1200,210 @@ function decodeShareCode(code){
 const OP_SYM={'+':'+','-':'−','*':'×','/':'÷','=':''};
 const SIZES=[4,5,6,7,8,9];
 const $=id=>document.getElementById(id);
-function gridDims(N){const cols=N<=4?2:3;return{cols,rows:Math.ceil(N/cols)};}
 
-const G={ puzzle:null, N:5, difficulty:2, values:null, notes:null, sel:null, mode:'input',
-  hist:[], redo:[], startTs:0, elapsedMs:0, running:false, solved:false, timerId:null, cellEls:null, cellCage:null };
+const G={ puzzle:null, N:5, difficulty:4, values:null, notes:null, sel:null, mode:'input',
+  hist:[], redo:[], startTs:0, elapsedMs:0, running:false, solved:false, timerId:null,
+  cellEls:null, cellCage:null, cageColor:null, currentCode:null, stagedCode:'', phase:'idle' };
 
-/* ---------- 计时 ---------- */
-function fmtTime(ms){const s=Math.floor(ms/1000);const m=Math.floor(s/60);return String(m).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
-function tick(){$('timer').textContent=fmtTime(G.elapsedMs+(G.running?Date.now()-G.startTs:0));}
-function startTimer(){if(G.running||G.solved)return;G.running=true;G.startTs=Date.now();G.timerId=setInterval(tick,250);tick();}
+/* ---------- 计时 / 计分 ---------- */
+function fmtTime(ms){const dt=Math.floor(ms/100);const tenth=dt%10;const m=Math.floor(dt/600);return m+'.'+tenth;} // 分.十分之一秒(如 9999.1 / 0.5;分钟不补零,无小时/秒字段)
+function nowElapsed(){return G.elapsedMs+(G.running?Date.now()-G.startTs:0);}
+function calcScore(ms){const sec=Math.floor(ms/1000);return Math.max(0,G.N*G.difficulty*1000-sec*5);}
+function tick(){const ms=nowElapsed();$('timer').textContent=fmtTime(ms);$('score').textContent=calcScore(ms)+' 分';}
+function startTimer(){if(G.running||G.solved)return;G.running=true;G.startTs=Date.now();G.timerId=setInterval(tick,100);tick();}
 function stopTimer(){if(!G.running)return;G.elapsedMs+=Date.now()-G.startTs;G.running=false;clearInterval(G.timerId);tick();}
 function resetTimer(){stopTimer();G.elapsedMs=0;G.running=false;tick();}
 
 /* ---------- 存档 ---------- */
-const SAVE_KEY='mmdoku.save', BEST_KEY='mmdoku.best';
-function bestAll(){try{return JSON.parse(localStorage.getItem(BEST_KEY))||{};}catch{return {};}}
-function bestKey(){return G.N+'x'+G.difficulty;}
-function refreshBest(){const b=bestAll()[bestKey()];$('best').textContent=b?('最佳 '+fmtTime(b)):'最佳 --';}
+const SAVE_KEY='mmdoku.save.v2';
 function saveGame(){try{
+  if(!G.puzzle){localStorage.setItem(SAVE_KEY,JSON.stringify({staged:G.stagedCode}));return;}
   const notes=G.notes.map(row=>row.map(s=>[...s]));
-  localStorage.setItem(SAVE_KEY,JSON.stringify({code:G.code,values:G.values,notes,elapsedMs:G.elapsedMs+(G.running?Date.now()-G.startTs:0),solved:G.solved,difficulty:G.difficulty}));
-}catch{}}
-function loadGame(){try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));if(!s||!s.code)return false;
-  const p=decodeShareCode(s.code);startPuzzle(p,s.code,{restore:s});return true;}catch{return false;}}
+  localStorage.setItem(SAVE_KEY,JSON.stringify({staged:G.stagedCode,code:G.currentCode,values:G.values,notes,elapsedMs:nowElapsed(),solved:G.solved,phase:G.phase,difficulty:G.difficulty}));
+}catch(e){}}
+function loadGame(){try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));if(!s)return false;
+  if(s.staged){G.stagedCode=s.staged;$('code').value=s.staged;try{const p=decodeShareCode(s.staged);$('size').value=String(p.N);$('diff').value=String(p.difficulty);renderQR(s.staged);}catch(e){}}
+  if(s.code){const p=decodeShareCode(s.code);startPuzzle(p,s.code,{restore:s});return true;}
+  return false;
+}catch(e){return false;}}
 
-/* ---------- 开局 ---------- */
+/* ---------- 开局(画棋盘) ---------- */
 function startPuzzle(p,code,opt){
   opt=opt||{};
-  G.puzzle=p;G.N=p.N;G.difficulty=(opt.restore?opt.restore.difficulty:p.difficulty)||p.difficulty;G.code=code;
-  G.cellCage=cellCageGrid(p.N,p.cages);
+  G.puzzle=p;G.N=p.N;G.difficulty=(opt.restore&&opt.restore.difficulty)||p.difficulty;G.currentCode=code;
+  G.cellCage=cellCageGrid(p.N,p.cages);G.cageColor=colorCages(p.N,p.cages);
   G.values=opt.restore&&opt.restore.values?opt.restore.values:Array.from({length:p.N},()=>Array(p.N).fill(0));
   G.notes=opt.restore&&opt.restore.notes?opt.restore.notes.map(row=>row.map(a=>new Set(a))):Array.from({length:p.N},()=>Array.from({length:p.N},()=>new Set()));
   G.sel=null;G.hist=[];G.redo=[];G.solved=!!(opt.restore&&opt.restore.solved);
-  $('size').value=String(p.N);$('diff').value=String(G.difficulty);$('code').value=code;
+  $('size').value=String(p.N);$('diff').value=String(G.difficulty);
   resetTimer();G.elapsedMs=(opt.restore&&opt.restore.elapsedMs)||0;tick();
-  buildBoard();buildNumpad();renderAll();refreshBest();
-  if(!G.solved){startTimer();}
+  buildNumpad();buildBoard();renderAll();relayout();updateAux();
+  const restored=opt.restore;
+  if(G.solved){setPhase('idle');$('playcover').classList.remove('show');}
+  else if(restored){setPhase(restored.phase==='idle'?'idle':'paused');} // 装载不自动跑表:等待开始/等待继续
+  else if(opt.idle){setPhase('idle');}                  // 建好棋盘但先不开始(说明遮盖)
+  else{setPhase('playing');startTimer();}
   saveGame();
 }
+
+/* ---------- 阶段状态机:idle / playing / paused ---------- */
+function setPhase(ph){
+  G.phase=ph;const btn=$('playbtn');const cover=$('playcover');
+  if(ph==='idle'){btn.textContent='▶️';cover.classList.add('show');}       // 开始前:显示说明遮盖
+  else if(ph==='playing'){btn.textContent='⏸️';cover.classList.remove('show');} // 游戏中:隐藏
+  else if(ph==='paused'){btn.textContent='🔄';cover.classList.add('show');}  // 暂停中:显示说明遮盖
+}
+function onPlayBtn(){
+  if(G.phase==='idle')doStart();
+  else if(G.phase==='playing')doPause();
+  else if(G.phase==='paused')doResume();
+}
+function doStart(){
+  const code=G.stagedCode||$('code').value.trim();
+  if(!code){toast('请先生成或输入交换码');return;}
+  // 已按此码建好棋盘(idle)→ 直接开始;否则按码建盘
+  if(G.puzzle&&G.currentCode===code&&!G.solved){setPhase('playing');startTimer();saveGame();toast('开始!');return;}
+  let p;try{p=decodeShareCode(code);}catch(e){toast(e.message||'交换码无效');return;}
+  startPuzzle(p,code,{});toast('开始!');
+}
+function doPause(){stopTimer();setPhase('paused');saveGame();}
+function doResume(){
+  const editing=$('code').value.trim();
+  if(editing&&editing!==G.currentCode){
+    askConfirm('交换码已变','编辑框里的交换码与本局不同,继续本局还是按新码重开?',
+      ()=>{ // 按新码重开
+        let p;try{p=decodeShareCode(editing);}catch(e){toast('交换码无效,继续本局');resumeCurrent();return;}
+        G.stagedCode=editing;startPuzzle(p,editing,{});toast('已按新码重开');
+      },
+      ()=>resumeCurrent(),'按新码重开','继续本局');
+  }else resumeCurrent();
+}
+function resumeCurrent(){setPhase('playing');if(!G.solved)startTimer();saveGame();}
 
 /* ---------- 棋盘渲染 ---------- */
 function buildBoard(){
   const N=G.N;const board=$('board');board.innerHTML='';
   board.style.gridTemplateColumns='repeat('+N+',1fr)';board.style.gridTemplateRows='repeat('+N+',1fr)';
   G.cellEls=Array.from({length:N},()=>Array(N));
-  const {cols,rows}=gridDims(N);
-  const anchorMap={};G.puzzle.cages.forEach(cg=>{anchorMap[cg.anchor]={op:cg.op,target:cg.target};});
+  const anchorMap={};G.puzzle.cages.forEach(cg=>{anchorMap[cg.anchor]={op:cg.op,target:cg.target,size:cg.cells.length};});
+  const cageVar=id=>'var(--cage'+(G.cageColor[id]%4)+')';
   for(let r=0;r<N;r++)for(let c=0;c<N;c++){
     const cell=document.createElement('div');cell.className='cell';cell.dataset.r=r;cell.dataset.c=c;
-    // 笼子边框
-    const id=G.cellCage[r][c];const thick='3px',thin='0.5px';
-    cell.style.borderTopWidth=(r===0||G.cellCage[r-1][c]!==id)?thick:thin;
-    cell.style.borderLeftWidth=(c===0||G.cellCage[r][c-1]!==id)?thick:thin;
-    cell.style.borderRightWidth=(c===N-1||G.cellCage[r][c+1]!==id)?thick:thin;
-    cell.style.borderBottomWidth=(r===N-1||G.cellCage[r+1][c]!==id)?thick:thin;
-    cell.style.borderColor='var(--line-thick)';
-    // 角标
+    const id=G.cellCage[r][c];const col=cageVar(id);const thick='3px',thin='1px';
+    // 异笼边界=彩色粗边(本格笼色);同笼内部=细线(中性)
+    const edge=(other)=> other!==id;
+    cell.style.borderTopWidth=(r===0||edge(G.cellCage[r-1][c]))?thick:thin;
+    cell.style.borderLeftWidth=(c===0||edge(G.cellCage[r][c-1]))?thick:thin;
+    cell.style.borderRightWidth=(c===N-1||edge(G.cellCage[r][c+1]))?thick:thin;
+    cell.style.borderBottomWidth=(r===N-1||edge(G.cellCage[r+1][c]))?thick:thin;
+    cell.style.borderTopColor=(r===0||edge(G.cellCage[r-1][c]))?col:'var(--line-thin)';
+    cell.style.borderLeftColor=(c===0||edge(G.cellCage[r][c-1]))?col:'var(--line-thin)';
+    cell.style.borderRightColor=(c===N-1||edge(G.cellCage[r][c+1]))?col:'var(--line-thin)';
+    cell.style.borderBottomColor=(r===N-1||edge(G.cellCage[r+1][c]))?col:'var(--line-thin)';
+    // 高亮底层
+    const hl=document.createElement('div');hl.className='hlbg';cell.appendChild(hl);
+    // Cage Info 栏(仅笼锚点、非单格)
     const clue=document.createElement('div');clue.className='clue';
-    const a=anchorMap[r*N+c];if(a&&a.op!=='='){clue.textContent=a.target+OP_SYM[a.op];}else if(a&&a.op==='='){clue.textContent='';}
+    const a=anchorMap[r*N+c];
+    if(a&&a.op!=='=')clue.textContent=a.target+OP_SYM[a.op];
     cell.appendChild(clue);
-    // 同数字背景层
-    const sb=document.createElement('div');sb.className='samebg';cell.appendChild(sb);
-    // 值
-    const val=document.createElement('div');val.className='val';cell.appendChild(val);
-    // 笔记
-    const notes=document.createElement('div');notes.className='notes';notes.style.gridTemplateColumns='repeat('+cols+',1fr)';notes.style.gridTemplateRows='repeat('+rows+',1fr)';
-    for(let v=1;v<=N;v++){const s=document.createElement('span');s.dataset.v=v;notes.appendChild(s);}
-    cell.appendChild(notes);
+    // 主体:答案 + 3×3 笔记
+    const main=document.createElement('div');main.className='main';
+    const val=document.createElement('div');val.className='val';main.appendChild(val);
+    const notes=document.createElement('div');notes.className='notes';
+    for(let v=1;v<=9;v++){const s=document.createElement('span');s.dataset.v=v;notes.appendChild(s);}
+    main.appendChild(notes);cell.appendChild(main);
+    // 单格已知格:预填、不可改(但可选中)
+    if(a&&a.op==='='){cell.classList.add('given','filled');val.textContent=a.target;}
     cell.addEventListener('pointerdown',()=>selectCell(r,c));
     board.appendChild(cell);G.cellEls[r][c]=cell;
   }
-  sizeBoard();
+  // 单格已知值直接写入 values(视为已填,但不进历史、不可改)
+  for(const cg of G.puzzle.cages)if(cg.op==='='){const[r,c]=cg.cells[0];G.values[r][c]=cg.target;}
 }
-function sizeBoard(){const wrap=$('board-wrap');const s=Math.min(wrap.clientWidth,wrap.clientHeight);const board=$('board');board.style.width=s+'px';board.style.height=s+'px';}
+function sizeBoard(){
+  const app=$('app');const availW=app.clientWidth-12;
+  // 正方形棋盘优先按宽度;仅在屏太矮时按"屏高−控制区−输入区保底"回缩
+  const minInput=96;
+  const maxByH=app.clientHeight-$('control').offsetHeight-minInput-24;
+  const s=Math.max(60,Math.min(availW,maxByH));
+  const board=$('board');board.style.width=s+'px';board.style.height=s+'px';
+}
 
-/* ---------- 数字键盘 ---------- */
+/* ---------- 数字键盘(固定 3×3,键尽量大) ---------- */
 function buildNumpad(){
-  const N=G.N;const np=$('numpad');np.innerHTML='';const {cols,rows}=gridDims(N);
-  np.style.gridTemplateColumns='repeat('+cols+',1fr)';np.style.gridTemplateRows='repeat('+rows+',1fr)';
-  for(let v=1;v<=N;v++){const k=document.createElement('button');k.className='key numkey';k.dataset.v=v;
-    k.innerHTML='<span class="num">'+v+'</span><span class="rem"></span>';
-    k.addEventListener('pointerdown',e=>{e.preventDefault();pressNum(v);});np.appendChild(k);}
-  sizeInput();
+  const N=G.N;const np=$('numpad');np.innerHTML='';
+  for(let i=1;i<=9;i++){const k=document.createElement('button');
+    if(i<=N){k.className='key numkey';k.dataset.v=i;k.innerHTML='<span class="num">'+i+'</span><span class="rem"></span>';
+      k.addEventListener('pointerdown',e=>{e.preventDefault();pressNum(i);});}
+    else{k.className='key blank';}
+    np.appendChild(k);}
 }
+/* 布局顺序:控制区(自然高)→ 正方形棋盘(优先按宽度)→ 富余高度作输入区;键合理大小,余量留底部 */
+function relayout(){sizeBoard();sizeInput();}
 function sizeInput(){
-  // 数字键以合适尺寸为准(上限 66px),功能区按其倒推;高度不超过输入区可用高
-  const N=G.N;const {cols,rows}=gridDims(N);
-  const inputH=$('input').clientHeight||160;
-  const appW=$('app').clientWidth-12;
-  const maxKey=66, gap=6;
-  let key=Math.min(maxKey,Math.floor((inputH-(rows-1)*gap)/rows));
-  // 功能区 2x2 用同样键高
-  const funcW=2*key+gap;
-  const numW=cols*key+(cols-1)*gap;
-  // 若总宽超出,按宽度回缩
-  const totalW=numW+10+funcW;
-  if(totalW>appW){const scale=appW/totalW;key=Math.floor(key*scale);}
-  const np=$('numpad');np.style.width=(cols*key+(cols-1)*gap)+'px';np.style.height=(rows*key+(rows-1)*gap)+'px';
-  const fp=$('funcpad');fp.style.width=(2*key+gap)+'px';fp.style.height=(rows*key+(rows-1)*gap)+'px';
-  document.querySelectorAll('.key .num').forEach(el=>el.style.fontSize=Math.floor(key*0.5)+'px');
+  const gap=6,midGap=12,maxKey=96;
+  const app=$('app');const appW=app.clientWidth-12;
+  const availH=app.clientHeight-$('control').offsetHeight-$('board').offsetHeight-24; // 棋盘之外的富余高度
+  // 宽度:3 数字列 + 2 功能列 + 中缝 = 5*key + 3*gap + midGap;高度:3 行放进富余;取小 + 合理上限
+  let key=Math.floor((appW-3*gap-midGap)/5);
+  key=Math.min(key,maxKey,Math.floor((availH-2*gap)/3));
+  key=Math.max(30,key);
+  const np=$('numpad');np.style.width=(3*key+2*gap)+'px';np.style.height=(3*key+2*gap)+'px';
+  const fp=$('funcpad');fp.style.width=(2*key+gap)+'px';fp.style.height=(2*key+gap)+'px';
+  document.querySelectorAll('#numpad .num').forEach(el=>el.style.fontSize=Math.floor(key*0.52)+'px');
+}
+
+/* ---------- QR 显示 ---------- */
+function renderQR(code){
+  const box=$('qrbox');
+  if(!code){box.innerHTML='<span class="qr-empty">交换码<br>二维码</span>';return;}
+  try{
+    const {size,modules}=QR.qrEncode(code,{ecc:'M'});
+    const quiet=2,dim=size+quiet*2,scale=6;const px=dim*scale;
+    const cv=document.createElement('canvas');cv.width=px;cv.height=px;
+    const ctx=cv.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,px,px);ctx.fillStyle='#000';
+    for(let r=0;r<size;r++)for(let c=0;c<size;c++)if(modules[r][c])ctx.fillRect((c+quiet)*scale,(r+quiet)*scale,scale,scale);
+    box.innerHTML='';box.appendChild(cv);
+  }catch(e){box.innerHTML='<span class="qr-empty">二维码<br>过长</span>';}
 }
 
 /* ---------- 选择 / 高亮 / 渲染 ---------- */
-function selectCell(r,c){G.sel={r,c};renderHighlights();}
+function selectCell(r,c){if(G.phase!=='playing')return;G.sel={r,c};renderHighlights();} // 已知格也可选,只是不可改
 function renderAll(){const N=G.N;for(let r=0;r<N;r++)for(let c=0;c<N;c++)renderCell(r,c);computeConflicts();renderHighlights();updateRemaining();}
 function renderCell(r,c){
-  const cell=G.cellEls[r][c];const v=G.values[r][c];const val=cell.querySelector('.val');
+  const cell=G.cellEls[r][c];if(cell.classList.contains('given'))return;
+  const v=G.values[r][c];const val=cell.querySelector('.val');
   if(v){cell.classList.add('filled');val.textContent=v;}else{cell.classList.remove('filled');val.textContent='';}
-  const notesEl=cell.querySelector('.notes');const set=G.notes[r][c];
-  notesEl.querySelectorAll('span').forEach(sp=>{const nv=+sp.dataset.v;sp.textContent=(!v&&set.has(nv))?nv:'';});
+  const set=G.notes[r][c];cell.querySelectorAll('.notes span').forEach(sp=>{const nv=+sp.dataset.v;sp.textContent=(!v&&nv<=G.N&&set.has(nv))?nv:'';});
 }
 function renderHighlights(){
   const N=G.N;const sel=G.sel;
-  for(let r=0;r<N;r++)for(let c=0;c<N;c++){const cell=G.cellEls[r][c];cell.classList.remove('hl-line','hl-cage','hl-same','selected');}
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){G.cellEls[r][c].classList.remove('hl-line','hl-cage','selected','same-num');}
   if(!sel)return;
   const {r,c}=sel;const selVal=G.values[r][c];const selCage=G.cellCage[r][c];
   for(let i=0;i<N;i++)for(let j=0;j<N;j++){const cell=G.cellEls[i][j];
     if(i===r||j===c)cell.classList.add('hl-line');
     if(G.cellCage[i][j]===selCage)cell.classList.add('hl-cage');
-    if(selVal&&G.values[i][j]===selVal)cell.classList.add('hl-same');}
+    if(selVal&&G.values[i][j]===selVal)cell.classList.add('same-num');}
   G.cellEls[r][c].classList.add('selected');
 }
 function updateRemaining(){
   const N=G.N;const used=Array(N+1).fill(0);
   for(let r=0;r<N;r++)for(let c=0;c<N;c++){const v=G.values[r][c];if(v)used[v]++;}
-  document.querySelectorAll('#numpad .key').forEach(k=>{const v=+k.dataset.v;const rem=N-used[v];k.querySelector('.rem').textContent=rem;k.classList.toggle('dim',rem<=0);});
+  document.querySelectorAll('#numpad .numkey').forEach(k=>{const v=+k.dataset.v;const rem=N-used[v];k.querySelector('.rem').textContent=rem;k.classList.toggle('dim',rem<=0);});
 }
 
 /* ---------- 冲突自动校验 ---------- */
 function computeConflicts(){
   const N=G.N;const bad=Array.from({length:N},()=>Array(N).fill(false));
-  // 行列重复
   for(let r=0;r<N;r++){const seen={};for(let c=0;c<N;c++){const v=G.values[r][c];if(!v)continue;if(seen[v]!==undefined){bad[r][c]=true;bad[r][seen[v]]=true;}else seen[v]=c;}}
   for(let c=0;c<N;c++){const seen={};for(let r=0;r<N;r++){const v=G.values[r][c];if(!v)continue;if(seen[v]!==undefined){bad[r][c]=true;bad[seen[v]][c]=true;}else seen[v]=r;}}
-  // 笼子不可满足
   for(const cg of G.puzzle.cages){
+    if(cg.op==='=')continue;
     const vals=cg.cells.map(([r,c])=>G.values[r][c]);const filled=vals.filter(v=>v);const rem=vals.length-filled.length;
     let impossible=false;
-    if(cg.op==='='){/* 单格由行列/正解约束 */}
-    else if(rem===0){let val;if(cg.op==='+')val=filled.reduce((s,v)=>s+v,0);else if(cg.op==='*')val=filled.reduce((s,v)=>s*v,1);else if(cg.op==='-')val=Math.max(...filled)-Math.min(...filled);else val=Math.max(...filled)/Math.min(...filled);if(val!==cg.target)impossible=true;}
+    if(rem===0){let val;if(cg.op==='+')val=filled.reduce((s,v)=>s+v,0);else if(cg.op==='*')val=filled.reduce((s,v)=>s*v,1);else if(cg.op==='-')val=Math.max(...filled)-Math.min(...filled);else val=Math.max(...filled)/Math.min(...filled);if(val!==cg.target)impossible=true;}
     else{const s=filled.reduce((a,v)=>a+v,0),pr=filled.reduce((a,v)=>a*v,1);
       if(cg.op==='+'){if(s+rem>cg.target||s+rem*N<cg.target)impossible=true;}
       else if(cg.op==='*'){if(pr>cg.target||cg.target%pr!==0)impossible=true;}}
@@ -443,55 +1422,122 @@ function applyChange(r,c,fn){const before=snapshot(r,c);fn();pushHist(before);af
 function afterChange(){renderCell(G.sel.r,G.sel.c);computeConflicts();updateRemaining();renderHighlights();saveGame();
   if(!G.solved&&isComplete())onWin();}
 function pressNum(v){
+  if(G.phase!=='playing'){toast('先点 ▶️ 开始');return;}
   if(!G.sel){toast('先点一个格子');return;}
-  if(G.solved)return;const {r,c}=G.sel;startTimer();
+  if(G.solved)return;const {r,c}=G.sel;
+  if(G.cellEls[r][c].classList.contains('given'))return;
   if(G.mode==='note'){
-    if(G.values[r][c])return; // 有值不记笔记
+    if(G.values[r][c])return;
     applyChange(r,c,()=>{const s=G.notes[r][c];if(s.has(v))s.delete(v);else s.add(v);});
   }else{
     applyChange(r,c,()=>{if(G.values[r][c]===v){G.values[r][c]=0;}else{G.values[r][c]=v;G.notes[r][c].clear();}});
   }
 }
-function delCell(){if(!G.sel||G.solved)return;const{r,c}=G.sel;if(!G.values[r][c]&&G.notes[r][c].size===0)return;applyChange(r,c,()=>{G.values[r][c]=0;G.notes[r][c].clear();});}
+function delCell(){if(G.phase!=='playing'||!G.sel||G.solved)return;const{r,c}=G.sel;if(G.cellEls[r][c].classList.contains('given'))return;if(!G.values[r][c]&&G.notes[r][c].size===0)return;applyChange(r,c,()=>{G.values[r][c]=0;G.notes[r][c].clear();});}
 function undo(){if(!G.hist.length)return;const snap=G.hist.pop();const cur=snapshot(snap.r,snap.c);G.redo.push(cur);G.values[snap.r][snap.c]=snap.v;G.notes[snap.r][snap.c]=new Set(snap.n);G.sel={r:snap.r,c:snap.c};renderCell(snap.r,snap.c);computeConflicts();updateRemaining();renderHighlights();saveGame();}
 function redo(){if(!G.redo.length)return;const snap=G.redo.pop();const cur=snapshot(snap.r,snap.c);G.hist.push(cur);G.values[snap.r][snap.c]=snap.v;G.notes[snap.r][snap.c]=new Set(snap.n);G.sel={r:snap.r,c:snap.c};renderCell(snap.r,snap.c);computeConflicts();updateRemaining();renderHighlights();saveGame();}
-function move(dr,dc){if(!G.sel){selectCell(0,0);return;}let r=G.sel.r+dr,c=G.sel.c+dc;r=(r+G.N)%G.N;c=(c+G.N)%G.N;selectCell(r,c);}
+function move(dr,dc){if(G.phase!=='playing')return;if(!G.sel){selectCell(0,0);return;}const r=(G.sel.r+dr+G.N)%G.N,c=(G.sel.c+dc+G.N)%G.N;selectCell(r,c);}
 
-function onWin(){G.solved=true;stopTimer();const t=G.elapsedMs;const b=bestAll();const key=bestKey();let rec=false;if(b[key]===undefined||t<b[key]){b[key]=t;rec=true;try{localStorage.setItem(BEST_KEY,JSON.stringify(b));}catch{}}
-  refreshBest();saveGame();$('win-time').textContent='用时 '+fmtTime(t);$('win-best').textContent=rec?'🏆 新纪录!':('最佳 '+fmtTime(b[key]));$('win-modal').classList.add('show');}
+function onWin(){G.solved=true;stopTimer();setPhase('idle');$('playcover').classList.remove('show');
+  const t=G.elapsedMs;const sc=calcScore(t);saveGame();
+  $('win-time').textContent='用时 '+fmtTime(t);$('win-score').textContent='得分 '+sc;$('win-modal').classList.add('show');
+  setTimeout(autoNewGame,60);   // 完成后自动生成新局(进入等待开始)
+}
+function autoNewGame(){
+  const N=+$('size').value,d=+$('diff').value;
+  const seed=(Date.now()^(Math.floor(performance.now()*1000)))>>>0;
+  const p=generate(N,d,makeRng(seed));const code=encodeShareCode(p);
+  G.stagedCode=code;$('code').value=code;renderQR(code);
+  startPuzzle(p,code,{idle:true});
+}
 
 /* ---------- 工具 ---------- */
 let toastTimer=null;
-function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),1600);}
-function setMode(m){G.mode=m;const on=m==='note';$('mode').classList.toggle('on',on);$('mode').textContent=on?'笔记':'笔记';document.body.classList.toggle('note-mode',on);}
-
-/* ---------- 生成 / 交换码 ---------- */
-function newGame(){const N=+$('size').value;const d=+$('diff').value;toast('生成中…');
-  setTimeout(()=>{const seed=(Date.now()^(Math.floor(performance.now()*1000)))>>>0;const p=generate(N,d,makeRng(seed));const code=encodeShareCode(p);startPuzzle(p,code,{});toast('已生成');},20);
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),1700);}
+function setMode(m){G.mode=m;const on=m==='note';$('mode').classList.toggle('on',on);$('mode').textContent=on?'✍🏻':'✏️';document.body.classList.toggle('note-mode',on);}
+let confirmCb=null;
+function askConfirm(title,msg,onYes,onNo,yesLabel,noLabel){
+  $('confirm-title').textContent=title;$('confirm-msg').textContent=msg;
+  $('confirm-yes').textContent=yesLabel||'确定';$('confirm-no').textContent=noLabel||'取消';
+  confirmCb={yes:onYes,no:onNo};$('confirm-modal').classList.add('show');
 }
-function startFromCode(){const code=$('code').value.trim();if(!code){toast('请先输入交换码');return;}
-  let p;try{p=decodeShareCode(code);}catch(e){toast(e.message||'交换码无效');return;}startPuzzle(p,code,{});toast('开始!');}
-function verifyCode(){const code=$('code').value.trim();if(!code){toast('请先输入交换码');return;}
-  let p;try{p=decodeShareCode(code);}catch(e){toast(e.message||'交换码无效');return;}$('size').value=String(p.N);$('diff').value=String(p.difficulty);toast('有效:'+p.N+'×'+p.N+' 难度'+p.difficulty);}
+function updateAux(){const wide=window.innerWidth>=900;$('stage').classList.toggle('has-aux',wide&&G.N===9);}
 
-/* ---------- 事件 ---------- */
+/* ---------- ExCode 处理:validate / isDuplicate / apply + 四入口 ---------- */
+function validateExCode(s){try{return decodeShareCode(s);}catch(e){return null;}}
+function isDuplicate(s){return s===G.stagedCode;}
+function applyExCode(s,onDone){
+  const p=validateExCode(s);if(!p)return;
+  const gameRunning=G.puzzle&&!G.solved&&G.phase!=='idle';
+  const write=()=>{G.stagedCode=s;$('code').value=s;$('size').value=String(p.N);$('diff').value=String(p.difficulty);renderQR(s);saveGame();if(onDone)onDone();};
+  if(G.stagedCode&&gameRunning){
+    askConfirm('替换当前题目','当前有一局未结束,确认用新的交换码替换?',write,null,'替换','取消');
+  }else write();
+}
+/* 🪄 生成:循环直到不重复 → 写入(不画棋盘) */
+function doGenerate(){
+  const N=+$('size').value,d=+$('diff').value;toast('生成中…');
+  setTimeout(()=>{
+    let code,guard=0;
+    do{const seed=(Date.now()^(Math.floor(performance.now()*1000))^(guard*2654435761))>>>0;const p=generate(N,d,makeRng(seed));code=encodeShareCode(p);}while(isDuplicate(code)&&++guard<8);
+    applyExCode(code,()=>toast('已生成,点 ▶️ 开始'));
+  },20);
+}
+/* 📋 粘贴 */
+async function doPaste(){
+  let t='';try{t=(await navigator.clipboard.readText()||'').trim();}catch(e){toast('无法读剪贴板');return;}
+  if(!t){toast('剪贴板为空');return;}
+  if(!validateExCode(t)){toast('交换码无效');return;}
+  if(isDuplicate(t)){toast('与当前题目相同');return;}
+  applyExCode(t,()=>toast('已粘贴'));
+}
+/* 📷 拍照:取图 → 解码 → 同粘贴 */
+function doPhoto(){$('photoinput').click();}
+function onPhotoFile(ev){
+  const file=ev.target.files&&ev.target.files[0];ev.target.value='';if(!file)return;toast('识别中…');
+  const img=new Image();const url=URL.createObjectURL(file);
+  img.onload=()=>{
+    URL.revokeObjectURL(url);
+    const MAX=800;let w=img.width,h=img.height;const sc=Math.min(1,MAX/Math.max(w,h));w=Math.round(w*sc);h=Math.round(h*sc);
+    const cv=document.createElement('canvas');cv.width=w;cv.height=h;const ctx=cv.getContext('2d');ctx.drawImage(img,0,0,w,h);
+    const data=ctx.getImageData(0,0,w,h).data;const gray=new Uint8Array(w*h);
+    for(let i=0,j=0;i<data.length;i+=4,j++)gray[j]=(data[i]*77+data[i+1]*150+data[i+2]*29)>>8;
+    const code=QR.qrDecodeImage(gray,w,h);
+    if(!code){toast('扫码失败,请对准重拍');return;}
+    if(!validateExCode(code)){toast('交换码无效');return;}
+    if(isDuplicate(code)){toast('与当前题目相同');return;}
+    applyExCode(code,()=>toast('已扫码:'+code.slice(0,6)+'…'));
+  };
+  img.onerror=()=>{URL.revokeObjectURL(url);toast('图片读取失败');};
+  img.src=url;
+}
+/* 🔎 校验:编辑框 → validate → 跳过查重 → apply */
+function doVerify(){
+  const s=$('code').value.trim();if(!s){toast('请先输入交换码');return;}
+  if(!validateExCode(s)){toast('交换码无效');return;}
+  applyExCode(s,()=>{const p=validateExCode(s);toast('有效:'+p.N+'×'+p.N+' 难度'+p.difficulty);});
+}
+async function doCopy(){const s=$('code').value.trim()||G.stagedCode;if(!s){toast('无交换码');return;}try{await navigator.clipboard.writeText(s);toast('已复制');}catch(e){$('code').select();try{document.execCommand('copy');toast('已复制');}catch(_){toast('复制失败');}}}
+
+/* ---------- 事件 / 初始化 ---------- */
 function initSelects(){const sz=$('size');SIZES.forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n+'×'+n;sz.appendChild(o);});
-  const df=$('diff');[1,2,3,4,5].forEach(d=>{const o=document.createElement('option');o.value=d;o.textContent='难度'+d;df.appendChild(o);});sz.value='5';df.value='2';}
+  const df=$('diff');[1,2,3,4,5].forEach(d=>{const o=document.createElement('option');o.value=d;o.textContent='难度'+d;df.appendChild(o);});sz.value='5';df.value='4';}
 function bindEvents(){
-  $('gen').onclick=newGame;$('start').onclick=startFromCode;$('verify').onclick=verifyCode;
-  $('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('code').value);toast('已复制');}catch{$('code').select();document.execCommand&&document.execCommand('copy');toast('已复制');}};
-  $('paste').onclick=async()=>{try{const t=await navigator.clipboard.readText();$('code').value=t.trim();toast('已粘贴');}catch{toast('无法读取剪贴板,请手动粘贴');}};
+  $('gen').onclick=doGenerate;$('playbtn').onclick=onPlayBtn;
+  $('copy').onclick=doCopy;$('paste').onclick=doPaste;$('photo').onclick=doPhoto;$('verify').onclick=doVerify;
+  $('photoinput').onchange=onPhotoFile;
   $('mode').onclick=()=>setMode(G.mode==='input'?'note':'input');
   $('del').onclick=delCell;$('undo').onclick=undo;$('redo').onclick=redo;
-  $('help').onclick=()=>$('help-modal').classList.add('show');
-  $('help-close').onclick=()=>{$('help-modal').classList.remove('show');try{localStorage.setItem('mmdoku.helpseen','1');}catch{}};
+  $('code').addEventListener('input',()=>{const s=$('code').value.trim();if(validateExCode(s))renderQR(s);});
   $('win-close').onclick=()=>$('win-modal').classList.remove('show');
-  window.addEventListener('resize',()=>{sizeBoard();sizeInput();});
-  window.addEventListener('orientationchange',()=>setTimeout(()=>{sizeBoard();sizeInput();},200));
+  $('confirm-yes').onclick=()=>{$('confirm-modal').classList.remove('show');if(confirmCb&&confirmCb.yes)confirmCb.yes();confirmCb=null;};
+  $('confirm-no').onclick=()=>{$('confirm-modal').classList.remove('show');if(confirmCb&&confirmCb.no)confirmCb.no();confirmCb=null;};
+  window.addEventListener('resize',()=>{relayout();updateAux();});
+  window.addEventListener('orientationchange',()=>setTimeout(()=>{relayout();updateAux();},200));
   document.addEventListener('visibilitychange',()=>{if(document.hidden)saveGame();});
   document.addEventListener('keydown',e=>{
     if(e.target===$('code'))return;
-    if(e.key>='1'&&e.key<=String(G.N)){pressNum(+e.key);e.preventDefault();}
+    if(e.key>='1'&&e.key<=String(Math.min(9,G.N))){pressNum(+e.key);e.preventDefault();}
     else if(e.key==='Backspace'||e.key==='Delete'){delCell();e.preventDefault();}
     else if(e.key==='ArrowUp'){move(-1,0);e.preventDefault();}
     else if(e.key==='ArrowDown'){move(1,0);e.preventDefault();}
@@ -502,16 +1548,18 @@ function bindEvents(){
     else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){redo();e.preventDefault();}
   });
 }
-
-/* ---------- 启动 ---------- */
 function boot(){
   initSelects();bindEvents();setMode('input');
-  if(!loadGame()){newGame();}
-  try{if(!localStorage.getItem('mmdoku.helpseen'))$('help-modal').classList.add('show');}catch{}
-  setTimeout(()=>{sizeBoard();sizeInput();},50);
+  let started=false;try{started=loadGame();}catch(e){}
+  if(!started){
+    // 首开:用已暂存的码或新生成一局,进入 idle(说明遮盖,点 ▶️ 开玩)
+    let code=G.stagedCode,p=code?validateExCode(code):null;
+    if(!p){const N=+$('size').value,d=+$('diff').value;const seed=(Date.now()^(Math.floor(performance.now()*1000)))>>>0;p=generate(N,d,makeRng(seed));code=encodeShareCode(p);G.stagedCode=code;$('code').value=code;renderQR(code);}
+    startPuzzle(p,code,{idle:true});
+  }
+  setTimeout(()=>{relayout();updateAux();},50);
 }
-// 测试钩子(生产环境无害)
-window.__mm={G,generate,makeRng,encodeShareCode,decodeShareCode,startPuzzle,selectCell,pressNum,setMode,delCell,undo,redo,isComplete,computeConflicts,newGame};
+window.__mm={G,generate,makeRng,encodeShareCode,decodeShareCode,colorCages,QR,startPuzzle,doGenerate,doStart,doPause,doResume,selectCell,pressNum,move,setMode,delCell,undo,redo,isComplete,computeConflicts,validateExCode,applyExCode,renderQR};
 boot();
 </script>
 </body>
