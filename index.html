@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>mmDoku 数字方格</title>
+<style>
+  :root {
+    --bg: #f4f1ea;          /* 护眼米底 */
+    --panel: #fbf9f4;
+    --cell: #ffffff;
+    --ink: #2b2b2b;
+    --muted: #7a756b;
+    --line-thin: #cfc8ba;
+    --line-thick: #4a4438;
+    --accent: #3f6fb0;      /* 主色 蓝 */
+    --sel: rgba(63,111,176,.28);   /* 选中格 */
+    --line-hl: rgba(63,111,176,.12);/* 同行列 冷 */
+    --cage-hl: rgba(214,158,46,.16);/* 同笼 暖 */
+    --same: rgba(70,150,90,.20);    /* 同数字 */
+    --warn: #c0392b;        /* 冲突警告色 */
+    --btn: #ece4d4;
+    --btn-ink: #3a352c;
+    --btn-active: #d9cdb4;
+    --note-ink: #6b7a55;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1e22; --panel: #24272c; --cell: #2b2f36; --ink: #e8e6e0; --muted: #9a958c;
+      --line-thin: #454a52; --line-thick: #aab0ba; --accent: #6fa0dd;
+      --sel: rgba(111,160,221,.34); --line-hl: rgba(111,160,221,.16); --cage-hl: rgba(224,178,86,.20);
+      --same: rgba(120,190,140,.24); --warn: #ff6b5b; --btn: #343841; --btn-ink: #e8e6e0; --btn-active: #454b56; --note-ink: #a7b487;
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    overflow: hidden;
+  }
+  #app {
+    display: flex; flex-direction: column;
+    height: 100svh; width: 100%; max-width: 640px; margin: 0 auto;
+    padding: 6px; gap: 6px;
+  }
+  /* ---- 控制区 ---- */
+  #control { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
+  .crow { display: grid; gap: 6px; align-items: stretch; }
+  .crow > * { min-width: 0; height: 44px; }
+  .crow.r1 { grid-template-columns: minmax(0,1.1fr) minmax(0,.95fr) minmax(0,1.1fr) 12px minmax(0,1fr) minmax(0,1fr); }
+  .crow.r3 { grid-template-columns: 1fr 1.3fr; }
+  .gap { height: 44px; }
+  #start.btn { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #start.btn:active { filter: brightness(.92); }
+  select, .btn, #code {
+    font-size: 16px; border: 1px solid var(--line-thin); border-radius: 10px;
+    background: var(--btn); color: var(--btn-ink); padding: 0 8px;
+  }
+  select { appearance: none; text-align: center; text-align-last: center; font-weight: 600; }
+  .btn { cursor: pointer; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+  .btn:active { background: var(--btn-active); }
+  #code { background: var(--cell); color: var(--ink); font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: .5px; text-align: center; }
+  /* ---- 状态区 ---- */
+  #status {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+    padding: 2px 8px; font-size: 15px; color: var(--muted); min-height: 26px;
+  }
+  #status .left { display: flex; align-items: center; gap: 10px; }
+  #timer { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--ink); font-size: 18px; }
+  #help { border: none; background: none; color: var(--accent); font-size: 18px; cursor: pointer; padding: 2px 6px; font-weight: 700; }
+  /* ---- 棋盘区 ---- */
+  #board-wrap { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  #board { display: grid; background: var(--line-thick); border: 3px solid var(--line-thick); border-radius: 6px; overflow: hidden; }
+  .cell {
+    position: relative; background: var(--cell); container-type: size;
+    display: grid; grid-template-rows: auto 1fr; overflow: hidden;
+    border: 0 solid var(--line-thin);
+    cursor: pointer; user-select: none;
+  }
+  .cell .clue {
+    grid-row: 1; text-align: left; padding: 1px 3px; line-height: 1;
+    font-size: 26cqmin; font-weight: 700; color: var(--muted); white-space: nowrap; overflow: hidden;
+  }
+  .cell .val {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 62cqmin; font-weight: 600; color: var(--ink); pointer-events: none;
+  }
+  .cell.conflict .val { color: var(--warn); }
+  .cell .notes { grid-row: 2; display: grid; padding: 1px; gap: 0; }
+  .cell .notes span { display: flex; align-items: center; justify-content: center; font-size: 26cqmin; color: var(--note-ink); line-height: 1; }
+  .cell.filled .notes { display: none; }
+  /* 高亮层(伪元素叠加) */
+  .cell.hl-line::before, .cell.hl-cage::after, .cell.hl-same > .samebg { content: ""; position: absolute; inset: 0; pointer-events: none; }
+  .cell.hl-line::before { background: var(--line-hl); }
+  .cell.hl-cage::after { background: var(--cage-hl); }
+  .cell .samebg { position: absolute; inset: 0; pointer-events: none; }
+  .cell.hl-same .samebg { background: var(--same); }
+  .cell.selected { box-shadow: inset 0 0 0 3px var(--accent); }
+  .cell.selected::before { background: var(--sel) !important; }
+  .cell .clue, .cell .val, .cell .notes { position: relative; z-index: 2; }
+  /* ---- 输入区 ---- */
+  #input { flex: 0 0 auto; display: flex; gap: 10px; align-items: stretch; justify-content: center; padding-top: 2px; }
+  #numpad { display: grid; gap: 6px; }
+  #funcpad { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 6px; }
+  .key {
+    display: flex; align-items: center; justify-content: center; position: relative;
+    background: var(--btn); color: var(--btn-ink); border: 1px solid var(--line-thin);
+    font-size: 28px; font-weight: 700; cursor: pointer; user-select: none;
+    width: 100%; height: 100%; border-radius: 8px;
+  }
+  .key:active { background: var(--btn-active); }
+  .key.dim { opacity: .32; }
+  .key .rem { position: absolute; top: 2px; right: 5px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  body.note-mode .numkey { border-radius: 50% / 45%; }   /* 笔记模式:大圆角 */
+  .fkey { font-size: 15px; font-weight: 700; }
+  #mode.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  /* ---- 弹层 ---- */
+  #toast { position: fixed; left: 50%; bottom: 12%; transform: translateX(-50%); background: rgba(0,0,0,.82); color: #fff;
+    padding: 10px 18px; border-radius: 20px; font-size: 15px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 50; max-width: 86%; text-align: center; }
+  #toast.show { opacity: 1; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; z-index: 60; padding: 20px; }
+  .modal.show { display: flex; }
+  .card { background: var(--panel); color: var(--ink); border-radius: 14px; padding: 20px; max-width: 420px; width: 100%; max-height: 80vh; overflow: auto; }
+  .card h2 { margin: 0 0 10px; }
+  .card p, .card li { line-height: 1.6; font-size: 15px; }
+  .card .btn { height: 44px; margin-top: 12px; }
+  .card .big { font-size: 20px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="control">
+    <div class="crow r1">
+      <select id="size" aria-label="棋盘大小"></select>
+      <select id="diff" aria-label="难度"></select>
+      <button class="btn" id="gen">生成</button>
+      <div class="gap"></div>
+      <button class="btn" id="copy">复制</button>
+      <button class="btn" id="paste">粘贴</button>
+    </div>
+    <div class="crow r2">
+      <input id="code" placeholder="交换码" autocomplete="off" autocapitalize="off" spellcheck="false" />
+    </div>
+    <div class="crow r3">
+      <button class="btn" id="verify">校验</button>
+      <button class="btn" id="start">开始</button>
+    </div>
+  </div>
+  <div id="status">
+    <div class="left"><span id="timer">00:00</span><span id="best">最佳 --</span></div>
+    <button id="help">?</button>
+  </div>
+  <div id="board-wrap"><div id="board"></div></div>
+  <div id="input">
+    <div id="numpad"></div>
+    <div id="funcpad">
+      <button class="key fkey" id="mode">笔记</button>
+      <button class="key fkey" id="del">删除</button>
+      <button class="key fkey" id="undo">撤销</button>
+      <button class="key fkey" id="redo">重做</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+<div class="modal" id="help-modal">
+  <div class="card">
+    <h2>玩法</h2>
+    <p>在 N×N 方格里填 1~N,<b>每行、每列数字不重复</b>。</p>
+    <p>粗线围出的<b>笼子</b>左上角有目标数和运算符,笼内数字用该运算要等于目标(单格直接填该数)。笼内数字可重复,只要不同行同列。</p>
+    <p>填错(行列重复 / 笼子已不可能)时数字变<span style="color:var(--warn)">红色</span>提醒,但不告诉你答案。</p>
+    <p>底部左侧数字键填数(键角标=该数还差几个),右侧:笔记/删除/撤销/重做。点<b>笔记</b>可记候选(圆角键)。全部填满且无红色即通关。</p>
+    <p>点<b>生成</b>出新题并得交换码;发给家人,他们<b>粘贴</b>+<b>开始</b>即可玩同一局。</p>
+    <button class="btn" id="help-close">知道了</button>
+  </div>
+</div>
+<div class="modal" id="win-modal">
+  <div class="card">
+    <h2>🎉 通关!</h2>
+    <p class="big" id="win-time"></p>
+    <p class="big" id="win-best"></p>
+    <button class="btn" id="win-close">好</button>
+  </div>
+</div>
+<script>
+"use strict";
+/* ============================ 核心逻辑(与 _dev/core.mjs 同源) ============================ */
+function makeRng(seed){let a=seed>>>0;return function(){a|=0;a=(a+0x6d2b79f5)|0;let t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return ((t^(t>>>14))>>>0)/4294967296;};}
+function randInt(rng,n){return Math.floor(rng()*n);}
+function shuffle(rng,arr){for(let i=arr.length-1;i>0;i--){const j=randInt(rng,i+1);[arr[i],arr[j]]=[arr[j],arr[i]];}return arr;}
+function wpick(rng,weights){const e=Object.entries(weights);let tot=0;for(const[,w]of e)tot+=w;let x=rng()*tot;for(const[k,w]of e){x-=w;if(x<0)return k;}return e[e.length-1][0];}
+
+function latinSquare(N,rng){
+  const g=Array.from({length:N},()=>Array(N).fill(0));const rowU=Array(N).fill(0),colU=Array(N).fill(0);
+  function bt(pos){if(pos===N*N)return true;const r=(pos/N)|0,c=pos%N;const cand=[];for(let v=1;v<=N;v++){const b=1<<v;if(!(rowU[r]&b)&&!(colU[c]&b))cand.push(v);}shuffle(rng,cand);
+    for(const v of cand){const b=1<<v;g[r][c]=v;rowU[r]|=b;colU[c]|=b;if(bt(pos+1))return true;rowU[r]&=~b;colU[c]&=~b;}g[r][c]=0;return false;}
+  bt(0);return g;
+}
+
+function countSolutions(N,cages,limit){
+  limit=limit||2;
+  const cc=Array.from({length:N},()=>Array(N).fill(-1));cages.forEach((cg,i)=>cg.cells.forEach(([r,c])=>cc[r][c]=i));
+  const rowU=Array(N).fill(0),colU=Array(N).fill(0);
+  const cnt=cages.map(()=>0),sum=cages.map(()=>0),prod=cages.map(()=>1),vals=cages.map(()=>[]);let count=0;
+  function feasible(ci){const cg=cages[ci];if(cg.op==='=')return true;const full=cnt[ci]===cg.cells.length;const rem=cg.cells.length-cnt[ci];
+    if(full){if(cg.op==='+')return sum[ci]===cg.target;if(cg.op==='*')return prod[ci]===cg.target;if(cg.op==='-')return Math.abs(vals[ci][0]-vals[ci][1])===cg.target;if(cg.op==='/'){const a=vals[ci][0],b=vals[ci][1];return a===b*cg.target||b===a*cg.target;}}
+    else{if(cg.op==='+'){if(sum[ci]+rem>cg.target)return false;if(sum[ci]+rem*N<cg.target)return false;}if(cg.op==='*'){if(cg.target%prod[ci]!==0)return false;if(prod[ci]>cg.target)return false;}}
+    return true;}
+  function bt(pos){if(count>=limit)return;if(pos===N*N){count++;return;}const r=(pos/N)|0,c=pos%N,ci=cc[r][c],cg=cages[ci];
+    for(let v=1;v<=N;v++){const b=1<<v;if((rowU[r]&b)||(colU[c]&b))continue;if(cg.op==='='&&v!==cg.target)continue;
+      rowU[r]|=b;colU[c]|=b;cnt[ci]++;sum[ci]+=v;prod[ci]*=v;vals[ci].push(v);if(feasible(ci))bt(pos+1);
+      cnt[ci]--;sum[ci]-=v;prod[ci]/=v;vals[ci].pop();rowU[r]&=~b;colU[c]&=~b;if(count>=limit)return;}}
+  bt(0);return count;
+}
+
+const DIFF={
+  1:{sizes:{1:3,2:5},ops2:{'+':4,'-':4},opsM:{'+':1}},
+  2:{sizes:{1:2,2:5,3:2},ops2:{'+':4,'-':3,'*':1},opsM:{'+':2,'*':1}},
+  3:{sizes:{1:1,2:4,3:3},ops2:{'+':3,'-':3,'*':3,'/':2},opsM:{'+':2,'*':2}},
+  4:{sizes:{1:1,2:3,3:3,4:2},ops2:{'+':2,'-':2,'*':3,'/':3},opsM:{'+':1,'*':2}},
+  5:{sizes:{2:2,3:4,4:3},ops2:{'+':1,'-':1,'*':4,'/':3},opsM:{'+':1,'*':3}},
+};
+function anchorOf(cells,N){return cells.reduce((m,[r,c])=>Math.min(m,r*N+c),Infinity);}
+function isConnected(cells,N){if(cells.length<=1)return true;const set=new Set(cells.map(([r,c])=>r*N+c));const seen=new Set();const st=[cells[0]];seen.add(cells[0][0]*N+cells[0][1]);
+  while(st.length){const[r,c]=st.pop();for(const[a,b]of[[r-1,c],[r+1,c],[r,c-1],[r,c+1]]){const k=a*N+b;if(set.has(k)&&!seen.has(k)){seen.add(k);st.push([a,b]);}}}return seen.size===cells.length;}
+function partition(N,rng,sizeWeights){
+  const asg=Array.from({length:N},()=>Array(N).fill(false));const un=[];for(let r=0;r<N;r++)for(let c=0;c<N;c++)un.push([r,c]);const cages=[];
+  const nbr=([r,c])=>[[r-1,c],[r+1,c],[r,c-1],[r,c+1]].filter(([a,b])=>a>=0&&a<N&&b>=0&&b<N);
+  while(un.length){const si=randInt(rng,un.length);const seed=un[si];let target=parseInt(wpick(rng,sizeWeights),10);target=Math.min(target,un.length);
+    const region=[seed];const inR=new Set([seed[0]*N+seed[1]]);asg[seed[0]][seed[1]]=true;let fr=nbr(seed).filter(([a,b])=>!asg[a][b]);
+    while(region.length<target&&fr.length){const fi=randInt(rng,fr.length);const[a,b]=fr.splice(fi,1)[0];if(asg[a][b])continue;asg[a][b]=true;region.push([a,b]);inR.add(a*N+b);for(const[x,y]of nbr([a,b]))if(!asg[x][y]&&!inR.has(x*N+y))fr.push([x,y]);}
+    cages.push(region);for(let k=un.length-1;k>=0;k--)if(asg[un[k][0]][un[k][1]])un.splice(k,1);}
+  return cages;
+}
+function assignCage(cells,solution,rng,diff,N){
+  const vals=cells.map(([r,c])=>solution[r][c]);const anchor=anchorOf(cells,N);
+  if(cells.length===1)return{cells,op:'=',target:vals[0],anchor};
+  if(cells.length===2){const[a,b]=vals,hi=Math.max(a,b),lo=Math.min(a,b);const al={};for(const[op,w]of Object.entries(diff.ops2)){if(op==='/'&&hi%lo!==0)continue;al[op]=w;}if(!Object.keys(al).length)al['+']=1;const op=wpick(rng,al);let t;if(op==='+')t=a+b;else if(op==='-')t=hi-lo;else if(op==='*')t=a*b;else t=hi/lo;return{cells,op,target:t,anchor};}
+  const op=wpick(rng,diff.opsM);const t=op==='+'?vals.reduce((s,v)=>s+v,0):vals.reduce((s,v)=>s*v,1);return{cells,op,target:t,anchor};
+}
+function buildCages(N,solution,rng,diff){return partition(N,rng,diff.sizes).map(cells=>assignCage(cells,solution,rng,diff,N));}
+function splitOne(cages,solution,N,rng){const multi=cages.map((c,i)=>[c,i]).filter(([c])=>c.cells.length>1);if(!multi.length)return false;const[cage,idx]=multi[randInt(rng,multi.length)];const cell=cage.cells[randInt(rng,cage.cells.length)];const rest=cage.cells.filter(c=>!(c[0]===cell[0]&&c[1]===cell[1]));if(!isConnected(rest,N))return splitOne(cages,solution,N,rng);const[r,c]=cell;cages[idx]=assignCage(rest,solution,rng,DIFF[3],N);cages.push({cells:[cell],op:'=',target:solution[r][c],anchor:anchorOf([cell],N)});return true;}
+function generate(N,difficulty,rng,opts){opts=opts||{};const diff=DIFF[difficulty]||DIFF[3];const maxA=opts.maxAttempts||300;let solution=latinSquare(N,rng);let cages=null;
+  for(let a=0;a<maxA;a++){if(a>0&&a%25===0)solution=latinSquare(N,rng);cages=buildCages(N,solution,rng,diff);if(countSolutions(N,cages,2)===1)return{N,difficulty,solution,cages};}
+  let g=0;while(countSolutions(N,cages,2)!==1&&g++<N*N){if(!splitOne(cages,solution,N,rng))break;}return{N,difficulty,solution,cages};
+}
+
+/* ---------------- ShareCode ---------------- */
+const ALPHABET='23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz_=+^$!()';
+const VERSION=1;const OPS2=['+','-','*','/'];
+const FACT=(()=>{const f=[1];for(let i=1;i<=12;i++)f[i]=f[i-1]*i;return f;})();
+function bitsForCount(c){return c<=1?0:Math.ceil(Math.log2(c));}
+function rankPerm(arr){const av=Array.from({length:arr.length},(_,i)=>i+1);let r=0;for(let i=0;i<arr.length;i++){const idx=av.indexOf(arr[i]);r=r*av.length+idx;av.splice(idx,1);}return r;}
+function unrankPerm(rank,N){const av=Array.from({length:N},(_,i)=>i+1);const res=[];for(let i=0;i<N;i++){const f=FACT[N-1-i];const idx=Math.floor(rank/f);rank%=f;res.push(av.splice(idx,1)[0]);}return res;}
+function BitWriter(){this.bits=[];}
+BitWriter.prototype.write=function(v,n){for(let i=n-1;i>=0;i--)this.bits.push((v>>i)&1);};
+BitWriter.prototype.toChars=function(){const o=[];for(let i=0;i<this.bits.length;i+=6){let v=0;for(let j=0;j<6;j++)v=(v<<1)|(this.bits[i+j]||0);o.push(ALPHABET[v]);}return o.join('');};
+function BitReader(chars){this.bits=[];for(const ch of chars){const v=ALPHABET.indexOf(ch);for(let j=5;j>=0;j--)this.bits.push((v>>j)&1);}this.pos=0;}
+BitReader.prototype.read=function(n){let v=0;for(let i=0;i<n;i++)v=(v<<1)|(this.bits[this.pos++]||0);return v;};
+function cellCageGrid(N,cages){const g=Array.from({length:N},()=>Array(N).fill(-1));cages.forEach((cg,i)=>cg.cells.forEach(([r,c])=>g[r][c]=i));return g;}
+function checksumChar(s){let sum=0;for(const ch of s)sum=(sum+ALPHABET.indexOf(ch))%64;return ALPHABET[sum];}
+function encodeShareCode(p){const{N,difficulty,solution,cages}=p;const w=new BitWriter();w.write(N,4);w.write(difficulty,3);const cg=cellCageGrid(N,cages);
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){if(c<N-1)w.write(cg[r][c]===cg[r][c+1]?1:0,1);if(r<N-1)w.write(cg[r][c]===cg[r+1][c]?1:0,1);}
+  const sorted=[...cages].sort((a,b)=>a.anchor-b.anchor);for(const cage of sorted){const sz=cage.cells.length;if(sz===1)continue;if(sz===2)w.write(OPS2.indexOf(cage.op),2);else w.write(cage.op==='+'?0:1,1);}
+  const sb=bitsForCount(FACT[N]);for(let r=0;r<N;r++)w.write(rankPerm(solution[r]),sb);
+  const head=ALPHABET[VERSION]+w.toChars();return head+checksumChar(head);}
+function UF(n){this.p=Array.from({length:n},(_,i)=>i);}
+UF.prototype.find=function(x){while(this.p[x]!==x){this.p[x]=this.p[this.p[x]];x=this.p[x];}return x;};
+UF.prototype.union=function(a,b){this.p[this.find(a)]=this.find(b);};
+function decodeShareCode(code){
+  if(typeof code!=='string'||code.length<3)throw new Error('交换码无效');
+  for(const ch of code)if(ALPHABET.indexOf(ch)<0)throw new Error('交换码无效');
+  const head=code.slice(0,-1);if(checksumChar(head)!==code[code.length-1])throw new Error('交换码无效');
+  const version=ALPHABET.indexOf(code[0]);if(version!==VERSION)throw new Error('交换码版本不支持');
+  const r=new BitReader(head.slice(1));const N=r.read(4);if(N<3||N>9)throw new Error('交换码无效');const difficulty=r.read(3);
+  const uf=new UF(N*N);for(let rr=0;rr<N;rr++)for(let c=0;c<N;c++){if(c<N-1){if(r.read(1))uf.union(rr*N+c,rr*N+c+1);}if(rr<N-1){if(r.read(1))uf.union(rr*N+c,(rr+1)*N+c);}}
+  const groups=new Map();for(let rr=0;rr<N;rr++)for(let c=0;c<N;c++){const root=uf.find(rr*N+c);if(!groups.has(root))groups.set(root,[]);groups.get(root).push([rr,c]);}
+  let cages=[...groups.values()].map(cells=>({cells,anchor:anchorOf(cells,N)}));cages.sort((a,b)=>a.anchor-b.anchor);
+  for(const cage of cages){const sz=cage.cells.length;if(sz===1)cage.op='=';else if(sz===2)cage.op=OPS2[r.read(2)];else cage.op=r.read(1)?'*':'+';}
+  const sb=bitsForCount(FACT[N]);const solution=[];for(let rr=0;rr<N;rr++)solution.push(unrankPerm(r.read(sb),N));
+  for(const cage of cages){const vs=cage.cells.map(([rr,c])=>solution[rr][c]);if(cage.op==='=')cage.target=vs[0];else if(cage.op==='+')cage.target=vs.reduce((s,v)=>s+v,0);else if(cage.op==='*')cage.target=vs.reduce((s,v)=>s*v,1);else if(cage.op==='-')cage.target=Math.max(...vs)-Math.min(...vs);else cage.target=Math.max(...vs)/Math.min(...vs);}
+  return{N,difficulty,solution,cages};
+}
+
+/* ============================ 应用状态 / UI ============================ */
+const OP_SYM={'+':'+','-':'−','*':'×','/':'÷','=':''};
+const SIZES=[4,5,6,7,8,9];
+const $=id=>document.getElementById(id);
+function gridDims(N){const cols=N<=4?2:3;return{cols,rows:Math.ceil(N/cols)};}
+
+const G={ puzzle:null, N:5, difficulty:2, values:null, notes:null, sel:null, mode:'input',
+  hist:[], redo:[], startTs:0, elapsedMs:0, running:false, solved:false, timerId:null, cellEls:null, cellCage:null };
+
+/* ---------- 计时 ---------- */
+function fmtTime(ms){const s=Math.floor(ms/1000);const m=Math.floor(s/60);return String(m).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
+function tick(){$('timer').textContent=fmtTime(G.elapsedMs+(G.running?Date.now()-G.startTs:0));}
+function startTimer(){if(G.running||G.solved)return;G.running=true;G.startTs=Date.now();G.timerId=setInterval(tick,250);tick();}
+function stopTimer(){if(!G.running)return;G.elapsedMs+=Date.now()-G.startTs;G.running=false;clearInterval(G.timerId);tick();}
+function resetTimer(){stopTimer();G.elapsedMs=0;G.running=false;tick();}
+
+/* ---------- 存档 ---------- */
+const SAVE_KEY='mmdoku.save', BEST_KEY='mmdoku.best';
+function bestAll(){try{return JSON.parse(localStorage.getItem(BEST_KEY))||{};}catch{return {};}}
+function bestKey(){return G.N+'x'+G.difficulty;}
+function refreshBest(){const b=bestAll()[bestKey()];$('best').textContent=b?('最佳 '+fmtTime(b)):'最佳 --';}
+function saveGame(){try{
+  const notes=G.notes.map(row=>row.map(s=>[...s]));
+  localStorage.setItem(SAVE_KEY,JSON.stringify({code:G.code,values:G.values,notes,elapsedMs:G.elapsedMs+(G.running?Date.now()-G.startTs:0),solved:G.solved,difficulty:G.difficulty}));
+}catch{}}
+function loadGame(){try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));if(!s||!s.code)return false;
+  const p=decodeShareCode(s.code);startPuzzle(p,s.code,{restore:s});return true;}catch{return false;}}
+
+/* ---------- 开局 ---------- */
+function startPuzzle(p,code,opt){
+  opt=opt||{};
+  G.puzzle=p;G.N=p.N;G.difficulty=(opt.restore?opt.restore.difficulty:p.difficulty)||p.difficulty;G.code=code;
+  G.cellCage=cellCageGrid(p.N,p.cages);
+  G.values=opt.restore&&opt.restore.values?opt.restore.values:Array.from({length:p.N},()=>Array(p.N).fill(0));
+  G.notes=opt.restore&&opt.restore.notes?opt.restore.notes.map(row=>row.map(a=>new Set(a))):Array.from({length:p.N},()=>Array.from({length:p.N},()=>new Set()));
+  G.sel=null;G.hist=[];G.redo=[];G.solved=!!(opt.restore&&opt.restore.solved);
+  $('size').value=String(p.N);$('diff').value=String(G.difficulty);$('code').value=code;
+  resetTimer();G.elapsedMs=(opt.restore&&opt.restore.elapsedMs)||0;tick();
+  buildBoard();buildNumpad();renderAll();refreshBest();
+  if(!G.solved){startTimer();}
+  saveGame();
+}
+
+/* ---------- 棋盘渲染 ---------- */
+function buildBoard(){
+  const N=G.N;const board=$('board');board.innerHTML='';
+  board.style.gridTemplateColumns='repeat('+N+',1fr)';board.style.gridTemplateRows='repeat('+N+',1fr)';
+  G.cellEls=Array.from({length:N},()=>Array(N));
+  const {cols,rows}=gridDims(N);
+  const anchorMap={};G.puzzle.cages.forEach(cg=>{anchorMap[cg.anchor]={op:cg.op,target:cg.target};});
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+    const cell=document.createElement('div');cell.className='cell';cell.dataset.r=r;cell.dataset.c=c;
+    // 笼子边框
+    const id=G.cellCage[r][c];const thick='3px',thin='0.5px';
+    cell.style.borderTopWidth=(r===0||G.cellCage[r-1][c]!==id)?thick:thin;
+    cell.style.borderLeftWidth=(c===0||G.cellCage[r][c-1]!==id)?thick:thin;
+    cell.style.borderRightWidth=(c===N-1||G.cellCage[r][c+1]!==id)?thick:thin;
+    cell.style.borderBottomWidth=(r===N-1||G.cellCage[r+1][c]!==id)?thick:thin;
+    cell.style.borderColor='var(--line-thick)';
+    // 角标
+    const clue=document.createElement('div');clue.className='clue';
+    const a=anchorMap[r*N+c];if(a&&a.op!=='='){clue.textContent=a.target+OP_SYM[a.op];}else if(a&&a.op==='='){clue.textContent='';}
+    cell.appendChild(clue);
+    // 同数字背景层
+    const sb=document.createElement('div');sb.className='samebg';cell.appendChild(sb);
+    // 值
+    const val=document.createElement('div');val.className='val';cell.appendChild(val);
+    // 笔记
+    const notes=document.createElement('div');notes.className='notes';notes.style.gridTemplateColumns='repeat('+cols+',1fr)';notes.style.gridTemplateRows='repeat('+rows+',1fr)';
+    for(let v=1;v<=N;v++){const s=document.createElement('span');s.dataset.v=v;notes.appendChild(s);}
+    cell.appendChild(notes);
+    cell.addEventListener('pointerdown',()=>selectCell(r,c));
+    board.appendChild(cell);G.cellEls[r][c]=cell;
+  }
+  sizeBoard();
+}
+function sizeBoard(){const wrap=$('board-wrap');const s=Math.min(wrap.clientWidth,wrap.clientHeight);const board=$('board');board.style.width=s+'px';board.style.height=s+'px';}
+
+/* ---------- 数字键盘 ---------- */
+function buildNumpad(){
+  const N=G.N;const np=$('numpad');np.innerHTML='';const {cols,rows}=gridDims(N);
+  np.style.gridTemplateColumns='repeat('+cols+',1fr)';np.style.gridTemplateRows='repeat('+rows+',1fr)';
+  for(let v=1;v<=N;v++){const k=document.createElement('button');k.className='key numkey';k.dataset.v=v;
+    k.innerHTML='<span class="num">'+v+'</span><span class="rem"></span>';
+    k.addEventListener('pointerdown',e=>{e.preventDefault();pressNum(v);});np.appendChild(k);}
+  sizeInput();
+}
+function sizeInput(){
+  // 数字键以合适尺寸为准(上限 66px),功能区按其倒推;高度不超过输入区可用高
+  const N=G.N;const {cols,rows}=gridDims(N);
+  const inputH=$('input').clientHeight||160;
+  const appW=$('app').clientWidth-12;
+  const maxKey=66, gap=6;
+  let key=Math.min(maxKey,Math.floor((inputH-(rows-1)*gap)/rows));
+  // 功能区 2x2 用同样键高
+  const funcW=2*key+gap;
+  const numW=cols*key+(cols-1)*gap;
+  // 若总宽超出,按宽度回缩
+  const totalW=numW+10+funcW;
+  if(totalW>appW){const scale=appW/totalW;key=Math.floor(key*scale);}
+  const np=$('numpad');np.style.width=(cols*key+(cols-1)*gap)+'px';np.style.height=(rows*key+(rows-1)*gap)+'px';
+  const fp=$('funcpad');fp.style.width=(2*key+gap)+'px';fp.style.height=(rows*key+(rows-1)*gap)+'px';
+  document.querySelectorAll('.key .num').forEach(el=>el.style.fontSize=Math.floor(key*0.5)+'px');
+}
+
+/* ---------- 选择 / 高亮 / 渲染 ---------- */
+function selectCell(r,c){G.sel={r,c};renderHighlights();}
+function renderAll(){const N=G.N;for(let r=0;r<N;r++)for(let c=0;c<N;c++)renderCell(r,c);computeConflicts();renderHighlights();updateRemaining();}
+function renderCell(r,c){
+  const cell=G.cellEls[r][c];const v=G.values[r][c];const val=cell.querySelector('.val');
+  if(v){cell.classList.add('filled');val.textContent=v;}else{cell.classList.remove('filled');val.textContent='';}
+  const notesEl=cell.querySelector('.notes');const set=G.notes[r][c];
+  notesEl.querySelectorAll('span').forEach(sp=>{const nv=+sp.dataset.v;sp.textContent=(!v&&set.has(nv))?nv:'';});
+}
+function renderHighlights(){
+  const N=G.N;const sel=G.sel;
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){const cell=G.cellEls[r][c];cell.classList.remove('hl-line','hl-cage','hl-same','selected');}
+  if(!sel)return;
+  const {r,c}=sel;const selVal=G.values[r][c];const selCage=G.cellCage[r][c];
+  for(let i=0;i<N;i++)for(let j=0;j<N;j++){const cell=G.cellEls[i][j];
+    if(i===r||j===c)cell.classList.add('hl-line');
+    if(G.cellCage[i][j]===selCage)cell.classList.add('hl-cage');
+    if(selVal&&G.values[i][j]===selVal)cell.classList.add('hl-same');}
+  G.cellEls[r][c].classList.add('selected');
+}
+function updateRemaining(){
+  const N=G.N;const used=Array(N+1).fill(0);
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){const v=G.values[r][c];if(v)used[v]++;}
+  document.querySelectorAll('#numpad .key').forEach(k=>{const v=+k.dataset.v;const rem=N-used[v];k.querySelector('.rem').textContent=rem;k.classList.toggle('dim',rem<=0);});
+}
+
+/* ---------- 冲突自动校验 ---------- */
+function computeConflicts(){
+  const N=G.N;const bad=Array.from({length:N},()=>Array(N).fill(false));
+  // 行列重复
+  for(let r=0;r<N;r++){const seen={};for(let c=0;c<N;c++){const v=G.values[r][c];if(!v)continue;if(seen[v]!==undefined){bad[r][c]=true;bad[r][seen[v]]=true;}else seen[v]=c;}}
+  for(let c=0;c<N;c++){const seen={};for(let r=0;r<N;r++){const v=G.values[r][c];if(!v)continue;if(seen[v]!==undefined){bad[r][c]=true;bad[seen[v]][c]=true;}else seen[v]=r;}}
+  // 笼子不可满足
+  for(const cg of G.puzzle.cages){
+    const vals=cg.cells.map(([r,c])=>G.values[r][c]);const filled=vals.filter(v=>v);const rem=vals.length-filled.length;
+    let impossible=false;
+    if(cg.op==='='){/* 单格由行列/正解约束 */}
+    else if(rem===0){let val;if(cg.op==='+')val=filled.reduce((s,v)=>s+v,0);else if(cg.op==='*')val=filled.reduce((s,v)=>s*v,1);else if(cg.op==='-')val=Math.max(...filled)-Math.min(...filled);else val=Math.max(...filled)/Math.min(...filled);if(val!==cg.target)impossible=true;}
+    else{const s=filled.reduce((a,v)=>a+v,0),pr=filled.reduce((a,v)=>a*v,1);
+      if(cg.op==='+'){if(s+rem>cg.target||s+rem*N<cg.target)impossible=true;}
+      else if(cg.op==='*'){if(pr>cg.target||cg.target%pr!==0)impossible=true;}}
+    if(impossible)for(const[r,c]of cg.cells)if(G.values[r][c])bad[r][c]=true;
+  }
+  G.conflicts=bad;
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++)G.cellEls[r][c].classList.toggle('conflict',bad[r][c]);
+  return bad;
+}
+function isComplete(){const N=G.N;for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(!G.values[r][c])return false;for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(G.conflicts[r][c])return false;return true;}
+
+/* ---------- 操作 ---------- */
+function snapshot(r,c){return{r,c,v:G.values[r][c],n:[...G.notes[r][c]]};}
+function pushHist(snap){G.hist.push(snap);G.redo.length=0;}
+function applyChange(r,c,fn){const before=snapshot(r,c);fn();pushHist(before);afterChange();}
+function afterChange(){renderCell(G.sel.r,G.sel.c);computeConflicts();updateRemaining();renderHighlights();saveGame();
+  if(!G.solved&&isComplete())onWin();}
+function pressNum(v){
+  if(!G.sel){toast('先点一个格子');return;}
+  if(G.solved)return;const {r,c}=G.sel;startTimer();
+  if(G.mode==='note'){
+    if(G.values[r][c])return; // 有值不记笔记
+    applyChange(r,c,()=>{const s=G.notes[r][c];if(s.has(v))s.delete(v);else s.add(v);});
+  }else{
+    applyChange(r,c,()=>{if(G.values[r][c]===v){G.values[r][c]=0;}else{G.values[r][c]=v;G.notes[r][c].clear();}});
+  }
+}
+function delCell(){if(!G.sel||G.solved)return;const{r,c}=G.sel;if(!G.values[r][c]&&G.notes[r][c].size===0)return;applyChange(r,c,()=>{G.values[r][c]=0;G.notes[r][c].clear();});}
+function undo(){if(!G.hist.length)return;const snap=G.hist.pop();const cur=snapshot(snap.r,snap.c);G.redo.push(cur);G.values[snap.r][snap.c]=snap.v;G.notes[snap.r][snap.c]=new Set(snap.n);G.sel={r:snap.r,c:snap.c};renderCell(snap.r,snap.c);computeConflicts();updateRemaining();renderHighlights();saveGame();}
+function redo(){if(!G.redo.length)return;const snap=G.redo.pop();const cur=snapshot(snap.r,snap.c);G.hist.push(cur);G.values[snap.r][snap.c]=snap.v;G.notes[snap.r][snap.c]=new Set(snap.n);G.sel={r:snap.r,c:snap.c};renderCell(snap.r,snap.c);computeConflicts();updateRemaining();renderHighlights();saveGame();}
+function move(dr,dc){if(!G.sel){selectCell(0,0);return;}let r=G.sel.r+dr,c=G.sel.c+dc;r=(r+G.N)%G.N;c=(c+G.N)%G.N;selectCell(r,c);}
+
+function onWin(){G.solved=true;stopTimer();const t=G.elapsedMs;const b=bestAll();const key=bestKey();let rec=false;if(b[key]===undefined||t<b[key]){b[key]=t;rec=true;try{localStorage.setItem(BEST_KEY,JSON.stringify(b));}catch{}}
+  refreshBest();saveGame();$('win-time').textContent='用时 '+fmtTime(t);$('win-best').textContent=rec?'🏆 新纪录!':('最佳 '+fmtTime(b[key]));$('win-modal').classList.add('show');}
+
+/* ---------- 工具 ---------- */
+let toastTimer=null;
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),1600);}
+function setMode(m){G.mode=m;const on=m==='note';$('mode').classList.toggle('on',on);$('mode').textContent=on?'笔记':'笔记';document.body.classList.toggle('note-mode',on);}
+
+/* ---------- 生成 / 交换码 ---------- */
+function newGame(){const N=+$('size').value;const d=+$('diff').value;toast('生成中…');
+  setTimeout(()=>{const seed=(Date.now()^(Math.floor(performance.now()*1000)))>>>0;const p=generate(N,d,makeRng(seed));const code=encodeShareCode(p);startPuzzle(p,code,{});toast('已生成');},20);
+}
+function startFromCode(){const code=$('code').value.trim();if(!code){toast('请先输入交换码');return;}
+  let p;try{p=decodeShareCode(code);}catch(e){toast(e.message||'交换码无效');return;}startPuzzle(p,code,{});toast('开始!');}
+function verifyCode(){const code=$('code').value.trim();if(!code){toast('请先输入交换码');return;}
+  let p;try{p=decodeShareCode(code);}catch(e){toast(e.message||'交换码无效');return;}$('size').value=String(p.N);$('diff').value=String(p.difficulty);toast('有效:'+p.N+'×'+p.N+' 难度'+p.difficulty);}
+
+/* ---------- 事件 ---------- */
+function initSelects(){const sz=$('size');SIZES.forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n+'×'+n;sz.appendChild(o);});
+  const df=$('diff');[1,2,3,4,5].forEach(d=>{const o=document.createElement('option');o.value=d;o.textContent='难度'+d;df.appendChild(o);});sz.value='5';df.value='2';}
+function bindEvents(){
+  $('gen').onclick=newGame;$('start').onclick=startFromCode;$('verify').onclick=verifyCode;
+  $('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('code').value);toast('已复制');}catch{$('code').select();document.execCommand&&document.execCommand('copy');toast('已复制');}};
+  $('paste').onclick=async()=>{try{const t=await navigator.clipboard.readText();$('code').value=t.trim();toast('已粘贴');}catch{toast('无法读取剪贴板,请手动粘贴');}};
+  $('mode').onclick=()=>setMode(G.mode==='input'?'note':'input');
+  $('del').onclick=delCell;$('undo').onclick=undo;$('redo').onclick=redo;
+  $('help').onclick=()=>$('help-modal').classList.add('show');
+  $('help-close').onclick=()=>{$('help-modal').classList.remove('show');try{localStorage.setItem('mmdoku.helpseen','1');}catch{}};
+  $('win-close').onclick=()=>$('win-modal').classList.remove('show');
+  window.addEventListener('resize',()=>{sizeBoard();sizeInput();});
+  window.addEventListener('orientationchange',()=>setTimeout(()=>{sizeBoard();sizeInput();},200));
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)saveGame();});
+  document.addEventListener('keydown',e=>{
+    if(e.target===$('code'))return;
+    if(e.key>='1'&&e.key<=String(G.N)){pressNum(+e.key);e.preventDefault();}
+    else if(e.key==='Backspace'||e.key==='Delete'){delCell();e.preventDefault();}
+    else if(e.key==='ArrowUp'){move(-1,0);e.preventDefault();}
+    else if(e.key==='ArrowDown'){move(1,0);e.preventDefault();}
+    else if(e.key==='ArrowLeft'){move(0,-1);e.preventDefault();}
+    else if(e.key==='ArrowRight'){move(0,1);e.preventDefault();}
+    else if(e.key==='p'||e.key==='P'){setMode(G.mode==='input'?'note':'input');}
+    else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){if(e.shiftKey)redo();else undo();e.preventDefault();}
+    else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){redo();e.preventDefault();}
+  });
+}
+
+/* ---------- 启动 ---------- */
+function boot(){
+  initSelects();bindEvents();setMode('input');
+  if(!loadGame()){newGame();}
+  try{if(!localStorage.getItem('mmdoku.helpseen'))$('help-modal').classList.add('show');}catch{}
+  setTimeout(()=>{sizeBoard();sizeInput();},50);
+}
+// 测试钩子(生产环境无害)
+window.__mm={G,generate,makeRng,encodeShareCode,decodeShareCode,startPuzzle,selectCell,pressNum,setMode,delCell,undo,redo,isComplete,computeConflicts,newGame};
+boot();
+</script>
+</body>
+</html>
