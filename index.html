@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-<title>mmDoku 数字方格</title>
+<meta name="theme-color" content="#1c1e22" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<title>mmDoku · Multiuser MathDoku</title>
 <style>
   :root {
     --bg: #f4f1ea; --panel: #fbf9f4; --cell: #ffffff; --ink: #2b2b2b; --muted: #7a756b;
@@ -161,6 +164,15 @@
   .card .row2 { display: flex; gap: 12px; justify-content: center; margin-top: 14px; }                                    /* 双按钮组居中 */
   .card .row2 .btn { margin-top: 0; min-width: 130px; align-self: auto; }
   .card .big { font-size: 20px; text-align: center; }
+  .card #win-note { text-align: center; color: var(--muted); font-size: 13px; margin-top: 8px; min-height: 16px; }
+  .card #win-note.ok { color: var(--same-ink); }
+  /* ---- 实时扫码取景 ---- */
+  #cam-overlay { position: fixed; inset: 0; background: #000; z-index: 80; display: none; align-items: center; justify-content: center; overflow: hidden; }
+  #cam-overlay.show { display: flex; }
+  #cam-video { width: 100%; height: 100%; object-fit: cover; }
+  #cam-frame { position: absolute; width: min(72vw,52vh); aspect-ratio: 1; border: 3px solid rgba(255,255,255,.85); border-radius: 16px; box-shadow: 0 0 0 100vmax rgba(0,0,0,.4); pointer-events: none; }
+  #cam-status { position: absolute; top: 7%; left: 0; right: 0; text-align: center; color: #fff; font-size: 16px; text-shadow: 0 1px 3px #000; }
+  #cam-cancel { position: absolute; bottom: 8%; left: 50%; transform: translateX(-50%); height: 48px; padding: 0 30px; border: none; border-radius: 24px; background: rgba(255,255,255,.94); color: #222; font-size: 17px; font-weight: 700; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -225,13 +237,23 @@
   </aside>
 </div>
 <input type="file" id="photoinput" accept="image/*" capture="environment" style="display:none" />
+<div id="cam-overlay">
+  <video id="cam-video" playsinline muted></video>
+  <div id="cam-frame"></div>
+  <div id="cam-status">对准二维码…</div>
+  <button id="cam-cancel">取消</button>
+</div>
 <div id="toast"></div>
 <div class="modal" id="win-modal">
   <div class="card">
     <h2>🎉 通关!</h2>
     <p class="big" id="win-time"></p>
     <p class="big" id="win-score"></p>
-    <button class="btn wide" id="win-close">好</button>
+    <p id="win-note"></p>
+    <div class="row2">
+      <button class="btn wide" id="win-copy">复制结果</button>
+      <button class="btn wide" id="win-close">好</button>
+    </div>
   </div>
 </div>
 <div class="modal" id="confirm-modal">
@@ -1475,10 +1497,20 @@ function undo(){if(!G.hist.length)return;const snap=G.hist.pop();const cur=snaps
 function redo(){if(!G.redo.length)return;const snap=G.redo.pop();const cur=snapshot(snap.r,snap.c);G.hist.push(cur);G.values[snap.r][snap.c]=snap.v;G.notes[snap.r][snap.c]=new Set(snap.n);G.sel={r:snap.r,c:snap.c};renderCell(snap.r,snap.c);computeConflicts();updateRemaining();renderHighlights();saveGame();}
 function move(dr,dc){if(G.phase!=='playing')return;if(!G.sel){selectCell(0,0);return;}const r=(G.sel.r+dr+G.N)%G.N,c=(G.sel.c+dc+G.N)%G.N;selectCell(r,c);}
 
+function fmtShareTime(ms){const dt=Math.floor(ms/100);const tenth=dt%10;const s=Math.floor(dt/10);const sec=s%60;const min=Math.floor(s/60);return min+"'"+String(sec).padStart(2,'0')+'"'+tenth;} // 分'秒"十(结算/分享用)
+function copyShare(){const s=G.winShare;if(!s)return;const note=$('win-note');
+  const ok=()=>{note.textContent='✓ 结果已复制到剪贴板,可粘贴分享';note.classList.add('ok');};
+  const no=()=>{note.textContent='点「复制结果」再粘贴分享';note.classList.remove('ok');};
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(s).then(ok).catch(no);return;}
+  try{const ta=document.createElement('textarea');ta.value=s;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);ok();}catch(e){no();}
+}
 function onWin(){G.solved=true;stopTimer();setPhase('idle');$('playcover').classList.remove('show');
   const t=G.elapsedMs;const sc=calcScore(t);saveGame();
-  $('win-time').textContent='用时 '+fmtTime(t);$('win-score').textContent='得分 '+sc;$('win-modal').classList.add('show');
-  setTimeout(autoNewGame,60);   // 完成后自动生成新局(进入等待开始)
+  G.winShare='用时'+fmtShareTime(t)+'，得分'+sc;
+  $('win-time').textContent='用时 '+fmtShareTime(t);$('win-score').textContent='得分 '+sc;
+  $('win-note').textContent='';$('win-note').classList.remove('ok');$('win-modal').classList.add('show');
+  copyShare();                    // 顺便复制结果到剪贴板(结算页提示已复制)
+  setTimeout(autoNewGame,60);     // 完成后自动生成新局(进入等待开始)
 }
 function autoNewGame(){
   const N=+$('size').value,d=+$('diff').value;
@@ -1594,26 +1626,30 @@ async function doPaste(){
   if(isDuplicate(t)){toast('与当前题目相同');return;}
   applyExCode(t,()=>toast('已粘贴'));
 }
-/* 📷 拍照:取图 → 解码 → 同粘贴 */
-function doPhoto(){$('photoinput').click();}
-function onPhotoFile(ev){
-  const file=ev.target.files&&ev.target.files[0];ev.target.value='';if(!file)return;toast('识别中…');
-  const img=new Image();const url=URL.createObjectURL(file);
-  img.onload=()=>{
-    URL.revokeObjectURL(url);
-    const MAX=800;let w=img.width,h=img.height;const sc=Math.min(1,MAX/Math.max(w,h));w=Math.round(w*sc);h=Math.round(h*sc);
-    const cv=document.createElement('canvas');cv.width=w;cv.height=h;const ctx=cv.getContext('2d');ctx.drawImage(img,0,0,w,h);
-    const data=ctx.getImageData(0,0,w,h).data;const gray=new Uint8Array(w*h);
-    for(let i=0,j=0;i<data.length;i+=4,j++)gray[j]=(data[i]*77+data[i+1]*150+data[i+2]*29)>>8;
-    const code=QR.qrDecodeImage(gray,w,h);
-    if(!code){toast('扫码失败,请对准重拍');return;}
-    if(!validateExCode(code)){toast('交换码无效');return;}
-    if(isDuplicate(code)){toast('与当前题目相同');return;}
-    applyExCode(code,()=>toast('已扫码:'+code.slice(0,6)+'…'));
-  };
-  img.onerror=()=>{URL.revokeObjectURL(url);toast('图片读取失败');};
-  img.src=url;
+/* 📷 扫码:实时优先(安全上下文)→ 拍照兜底 */
+function grayFrom(src,w,h){const cv=document.createElement('canvas');cv.width=w;cv.height=h;const ctx=cv.getContext('2d');ctx.drawImage(src,0,0,w,h);const d=ctx.getImageData(0,0,w,h).data;const g=new Uint8Array(w*h);for(let i=0,j=0;i<d.length;i+=4,j++)g[j]=(d[i]*77+d[i+1]*150+d[i+2]*29)>>8;return g;}
+function applyScannedCode(code){
+  if(!code){toast('扫码失败,请对准重拍');return;}
+  if(!validateExCode(code)){toast('交换码无效');return;}
+  if(isDuplicate(code)){toast('与当前题目相同');return;}
+  applyExCode(code,()=>toast('已扫码:'+code.slice(0,6)+'…'));
 }
+function camAvailable(){return !!(window.isSecureContext&&navigator.mediaDevices&&navigator.mediaDevices.getUserMedia);}
+function doPhoto(){if(camAvailable())openCamera();else $('photoinput').click();}
+let camStream=null,camTimer=null;
+function openCamera(){
+  const ov=$('cam-overlay'),v=$('cam-video');ov.classList.add('show');$('cam-status').textContent='对准二维码…';
+  navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}}).then(stream=>{
+    camStream=stream;v.srcObject=stream;const p=v.play();if(p&&p.catch)p.catch(()=>{});camTimer=setInterval(scanTick,250);
+  }).catch(()=>{closeCamera();toast('无法开摄像头,改用拍照');$('photoinput').click();});
+}
+function scanTick(){const v=$('cam-video');if(!v.videoWidth)return;const MAX=480;const sc=Math.min(1,MAX/Math.max(v.videoWidth,v.videoHeight));const w=Math.round(v.videoWidth*sc),h=Math.round(v.videoHeight*sc);
+  const code=QR.qrDecodeImage(grayFrom(v,w,h),w,h);if(code&&validateExCode(code)){closeCamera();applyScannedCode(code);}}
+function closeCamera(){if(camTimer){clearInterval(camTimer);camTimer=null;}if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null;}const v=$('cam-video');if(v)v.srcObject=null;$('cam-overlay').classList.remove('show');}
+function onPhotoFile(ev){const file=ev.target.files&&ev.target.files[0];ev.target.value='';if(!file)return;toast('识别中…');
+  const img=new Image();const url=URL.createObjectURL(file);
+  img.onload=()=>{URL.revokeObjectURL(url);const MAX=800;let w=img.width,h=img.height;const sc=Math.min(1,MAX/Math.max(w,h));w=Math.round(w*sc);h=Math.round(h*sc);applyScannedCode(QR.qrDecodeImage(grayFrom(img,w,h),w,h));};
+  img.onerror=()=>{URL.revokeObjectURL(url);toast('图片读取失败');};img.src=url;}
 /* 🔎 校验:编辑框 → validate → 跳过查重 → apply */
 function doVerify(){
   const s=$('code').value.trim();if(!s){toast('请先输入交换码');return;}
@@ -1629,6 +1665,7 @@ function bindEvents(){
   $('gen').onclick=doGenerate;$('playbtn').onclick=onPlayBtn;
   $('copy').onclick=doCopy;$('paste').onclick=doPaste;$('photo').onclick=doPhoto;$('verify').onclick=doVerify;
   $('photoinput').onchange=onPhotoFile;
+  $('cam-cancel').onclick=closeCamera;
   $('mode').onclick=()=>setMode(G.mode==='input'?'note':'input');
   $('del').onclick=delCell;$('undo').onclick=undo;$('redo').onclick=redo;
   // 辅助区事件
@@ -1639,6 +1676,7 @@ function bindEvents(){
   $('aux-notes').addEventListener('input',()=>{if(G.aux){G.aux.notes=$('aux-notes').innerHTML;saveGame();}});
   $('code').addEventListener('input',()=>{const s=$('code').value.trim();if(validateExCode(s))renderQR(s);});
   $('win-close').onclick=()=>$('win-modal').classList.remove('show');
+  $('win-copy').onclick=copyShare;
   $('confirm-yes').onclick=()=>{$('confirm-modal').classList.remove('show');if(confirmCb&&confirmCb.yes)confirmCb.yes();confirmCb=null;};
   $('confirm-no').onclick=()=>{$('confirm-modal').classList.remove('show');if(confirmCb&&confirmCb.no)confirmCb.no();confirmCb=null;};
   window.addEventListener('resize',()=>{updateAux();relayout();});
@@ -1667,8 +1705,9 @@ function boot(){
     startPuzzle(p,code,{idle:true});
   }
   setTimeout(()=>{updateAux();relayout();},50);
+  if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
-window.__mm={G,generate,makeRng,encodeShareCode,decodeShareCode,colorCages,decompose,QR,startPuzzle,doGenerate,doStart,doPause,doResume,selectCell,pressNum,move,setMode,delCell,undo,redo,isComplete,computeConflicts,validateExCode,applyExCode,renderQR,auxOnSelect,auxExec,auxToggleMask,auxNoteStrike};
+window.__mm={G,generate,makeRng,encodeShareCode,decodeShareCode,colorCages,decompose,QR,startPuzzle,doGenerate,doStart,doPause,doResume,selectCell,pressNum,move,setMode,delCell,undo,redo,isComplete,computeConflicts,validateExCode,applyExCode,renderQR,auxOnSelect,auxExec,auxToggleMask,auxNoteStrike,doPhoto,openCamera,closeCamera,camAvailable};
 boot();
 </script>
 </body>

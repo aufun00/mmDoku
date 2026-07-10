@@ -1,0 +1,17 @@
+{
+  "name": "mmDoku · Multiuser MathDoku",
+  "short_name": "mmDoku",
+  "description": "多用户版 MathDoku / KenKen 数字方格,题目用 QR / 交换码共享,离线可玩。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#1c1e22",
+  "theme_color": "#1c1e22",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
