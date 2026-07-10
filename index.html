@@ -39,31 +39,37 @@
     font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
     overflow: hidden;
   }
-  #stage { display: flex; flex-direction: row; justify-content: center; align-items: stretch; height: 100svh; width: 100%; gap: 8px; }
+  #stage { display: flex; flex-direction: row; justify-content: safe center; align-items: stretch; height: 100svh; width: 100%; gap: 8px; }
+  /* safe center:能放下就居中,放不下(手机开辅助区)时靠左对齐,保证左边控制区可横向滚回 */
   #app {
     display: flex; flex-direction: column;
-    height: 100svh; width: 100%; max-width: 560px;
+    height: 100svh; width: 100%; max-width: 560px; min-width: 0;
     padding: 6px; gap: 6px;
   }
   /* ---- 控制区:左 QR 方块 + 右 4×5 栅格 ---- */
-  #control { flex: 0 0 auto; display: grid; grid-template-columns: auto 1fr; gap: 6px; }
+  /* --ctlh = 右侧 4 行总高:40px×4 行 + 5px×3 行距 = 175px;QR 区 = 正方形 h×h,右侧吃剩余宽 */
+  #control { --ctlh: 175px; flex: 0 0 auto; display: grid; grid-template-columns: var(--ctlh) minmax(0, 1fr); gap: 6px; }
   #qrbox {
-    aspect-ratio: 1 / 1; height: 100%; background: #fff; border-radius: 8px; border: 1px solid var(--line-thin);
+    width: var(--ctlh); height: var(--ctlh); background: #fff; border-radius: 8px; border: 1px solid var(--line-thin);
     display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 4px;
   }
   #qrbox canvas { image-rendering: pixelated; width: 100%; height: 100%; object-fit: contain; }
   #qrbox .qr-empty { color: var(--muted); font-size: 12px; text-align: center; }
   #cgrid { display: grid; grid-template-columns: repeat(5, 1fr); grid-auto-rows: 40px; gap: 5px; }
   #cgrid > * { min-width: 0; height: 40px; font-size: 15px; }
-  .c12 { grid-column: span 2; } .c5 { grid-column: 1 / -1; }
+  .c12 { grid-column: span 2; } .c5 { grid-column: 1 / -1; } .c3 { grid-column: span 3; }
   select, .btn, #code {
     border: 1px solid var(--line-thin); border-radius: 9px;
     background: var(--btn); color: var(--btn-ink); padding: 0 6px;
   }
   select { appearance: none; text-align: center; text-align-last: center; font-weight: 600; }
-  .btn { cursor: pointer; font-weight: 600; display: flex; align-items: center; justify-content: center; font-size: 19px; }
+  .btn { cursor: pointer; font-weight: 600; display: flex; align-items: center; justify-content: center; font-size: 19px; white-space: nowrap; overflow: hidden; }
   .btn:active { background: var(--btn-active); }
   .btn.wide { font-size: 15px; }
+  #aux-toggle.on { background: var(--btn-active); box-shadow: inset 0 0 0 2px var(--muted); }
+  /* 文字/双 emoji 按钮:字号收紧 + 去 padding,窄格里自适应不溢出 */
+  #copy, #paste { font-size: 13px; padding: 0 1px; letter-spacing: -1px; }
+  #playbtn { font-size: 16px; padding: 0 1px; letter-spacing: -1px; }
   #code { background: var(--cell); color: var(--ink); font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: .3px; text-align: center; font-size: 14px; }
   #timer, #score { display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; font-weight: 700; background: var(--panel); border-radius: 8px; border: 1px solid var(--line-thin); }
   #timer { color: var(--ink); } #score { color: var(--muted); }
@@ -130,9 +136,19 @@
   #stage.has-aux #aux { display: flex; }
   #aux-decomp { flex: 0 0 61.8%; overflow: auto; background: var(--panel); border: 1px solid var(--line-thin);
     border-radius: 10px; padding: 8px 12px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 16px; line-height: 1.75; }
-  #aux-decomp .ln { cursor: pointer; white-space: nowrap; user-select: none; }
-  #aux-decomp .ln.struck { text-decoration: line-through; color: var(--muted); }
+  #aux-decomp .ln { display: flex; align-items: center; cursor: pointer; white-space: nowrap; user-select: none; }
+  #aux-decomp .ln.struck .ln-txt { text-decoration: line-through; color: var(--muted); }
   #aux-decomp .hint, #aux-decomp .empty { color: var(--muted); font-family: system-ui; font-size: 14px; }
+  /* 结果区:每个「结果段」= 首行(idx·cageinfo·值·数量) + 结果行;单击选中、再点取消;首行选中出🔼🔽🗑️,结果行选中出🗑️ */
+  #aux-decomp .seg { margin-bottom: 8px; }
+  #aux-decomp .seg-h { display: flex; align-items: center; cursor: pointer; user-select: none; font-family: system-ui;
+    font-size: 13px; color: var(--muted); padding: 2px 4px; border-bottom: 1px dashed var(--line-thin); }
+  #aux-decomp .sel { background: var(--btn-active); border-radius: 6px; }
+  #aux-decomp .seg-btns { margin-left: auto; display: flex; gap: 4px; padding-left: 8px; }
+  #aux-decomp .seg-btn { border: 1px solid var(--line-thin); border-radius: 6px; background: var(--btn); color: var(--btn-ink);
+    font-size: 13px; line-height: 1; padding: 3px 6px; cursor: pointer; }
+  #aux-decomp .seg-btn:disabled { opacity: .35; cursor: default; }
+  .cell.cage-linked { background-image: repeating-linear-gradient(45deg, rgba(128,128,128,.30) 0 5px, transparent 5px 10px); } /* 花纹底板:斜纹,不盖数字/彩边 */
   #aux-ctrl { flex: 0 0 auto; display: flex; gap: 8px; align-items: stretch; }
   #aux-left { flex: 1 1 auto; display: grid; grid-template-rows: 1fr 1fr; gap: 5px; }
   #aux-top { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; }
@@ -185,14 +201,14 @@
         <select id="diff" class="c12" aria-label="难度"></select>
         <button class="btn" id="gen" title="生成">🪄</button>
         <input id="code" class="c5" placeholder="交换码 ExCode" autocomplete="off" autocapitalize="off" spellcheck="false" />
-        <button class="btn" id="copy" title="复制">🗐</button>
-        <button class="btn" id="paste" title="粘贴">📋</button>
+        <button class="btn" id="copy" title="复制">👉📋</button>
+        <button class="btn" id="paste" title="粘贴">👈📋</button>
         <button class="btn" id="photo" title="拍照扫码">📷</button>
         <button class="btn" id="verify" title="校验">🔎</button>
         <span></span>
-        <div id="timer" class="c12">00:00</div>
-        <div id="score" class="c12">0 分</div>
-        <button class="btn" id="playbtn" title="开始/暂停/继续">▶️</button>
+        <button class="btn" id="aux-toggle" title="辅助区开关">💡</button>
+        <div id="timer" class="c3">00:00</div>
+        <button class="btn" id="playbtn" title="开始/暂停/继续">开始</button>
       </div>
     </div>
     <div id="playzone">
@@ -211,11 +227,11 @@
           <h3>MathDoku 玩法与说明</h3>
           <p>在 N×N 方格里填 1~N,<b>每行、每列数字不重复</b>。</p>
           <p><b>四色粗线</b>围出<b>笼子</b>,左上角是目标数+运算符,笼内数字用该运算得目标;<b>单格已直接给出、不可改</b>。笼内数字可重复,只要不同行同列。</p>
-          <p>填错(行列重复 / 笼子已不可能)时数字变<span style="color:var(--warn)">红</span>提醒(不给答案);点已有数字的格,同数字会<span style="color:var(--same-ink)">变色</span>。填满且无红即<b>通关</b>。</p>
+          <p>填错(行列重复 / 笼子已不可能)时数字变<span style="color:var(--warn)">红</span>警告(不给答案),<b>每次警告加罚时,且逐次加重</b>(错得越多、盘面越大,罚得越狠)。点已有数字的格,同数字会<span style="color:var(--same-ink)">变色</span>。填满且无红即<b>通关</b>——只比<b>总用时(含罚时)</b>,又快又少错者胜。</p>
           <hr>
-          <p><b>控制区</b>:🪄 生成新题并出交换码 · 🗐 复制 · 📋 粘贴 · 📷 拍照扫码 · 🔎 校验;左侧二维码可给手机扫。</p>
-          <p><b>▶️ 开始</b> / <b>⏸️ 暂停</b>(停表看说明)/ <b>🔄 继续</b>。底部数字键填数(角标=该数还差几个);✏️ 笔记 · 🗑️ 删除 · ↩️ 撤销 · ↪️ 重做。</p>
-          <p class="cover-hint">▶️ 点上方「开始」按钮开玩</p>
+          <p><b>控制区</b>:🪄 生成新题并出交换码 · 👉📋 复制 · 👈📋 粘贴 · 📷 拍照扫码 · 🔎 校验;左侧二维码可给手机扫。</p>
+          <p><b>「开始」</b> / <b>「暂停」</b>(停表看说明)/ <b>「继续」</b>。底部数字键填数(角标=该数还差几个);✏️ 笔记 · 🗑️ 删除 · ↩️ 撤销 · ↪️ 重做。</p>
+          <p class="cover-hint">点上方<b>「开始」</b>按钮开玩</p>
         </div>
       </div>
     </div>
@@ -1212,7 +1228,7 @@ function colorCages(N,cages){
   return color;
 }
 // 辅助区:值分解。op 为 * + - / 之一;返回:乘/加=升序多重集,减/除=[大,小];空数组=无解
-function decompose(op,value,count,masked){const mset=new Set(masked||[]);const allowed=[];for(let v=1;v<=9;v++)if(!mset.has(v))allowed.push(v);const out=[];
+function decompose(op,value,count,masked,maxV){maxV=maxV||9;const mset=new Set(masked||[]);const allowed=[];for(let v=1;v<=maxV;v++)if(!mset.has(v))allowed.push(v);const out=[];
   if(op==='-'){for(const big of allowed)for(const small of allowed)if(big>small&&big-small===value)out.push([big,small]);return out;}
   if(op==='/'){for(const big of allowed)for(const small of allowed)if(big===small*value)out.push([big,small]);return out;}
   const add=op==='+';
@@ -1261,14 +1277,20 @@ const SIZES=[4,5,6,7,8,9];
 const $=id=>document.getElementById(id);
 
 const G={ puzzle:null, N:5, difficulty:4, values:null, notes:null, sel:null, mode:'input',
-  hist:[], redo:[], startTs:0, elapsedMs:0, running:false, solved:false, timerId:null,
-  cellEls:null, cellCage:null, cageColor:null, currentCode:null, stagedCode:'', phase:'idle' };
+  hist:[], redo:[], startTs:0, elapsedMs:0, running:false, solved:false, timerId:null, mistakes:0,
+  auxOpen:false, cellEls:null, cellCage:null, cageColor:null, currentCode:null, stagedCode:'', phase:'idle' };
 
-/* ---------- 计时 / 计分 ---------- */
+/* ---------- 计时 / 罚时(取消计分:每次警告翻倍罚时,最终只比总用时) ---------- */
 function fmtTime(ms){const dt=Math.floor(ms/100);const tenth=dt%10;const totalSec=Math.floor(dt/10);const sec=totalSec%60;const min=Math.floor(totalSec/60);const ss=String(sec).padStart(2,'0');return (min>0?min+'"'+ss:ss)+"'"+tenth;} // 分"秒'十:分钟不限长、不满1分钟不显示分钟与",秒2位、十分之一秒1位
 function nowElapsed(){return G.elapsedMs+(G.running?Date.now()-G.startTs:0);}
-function calcScore(ms){const sec=Math.floor(ms/1000);return Math.max(0,G.N*G.difficulty*1000-sec*5);}
-function tick(){const ms=nowElapsed();$('timer').textContent=fmtTime(ms);$('score').textContent=calcScore(ms)+' 分';}
+function penaltySec(n){return n*6*G.N;}                        // 第 n 次警告罚 n×(6×N) 秒:5×5→30/60/90…,9×9→54/108…(等差·随尺寸)
+function registerWarning(){                                     // 一次红色警告 = 罚时,直接加进计时
+  G.mistakes=(G.mistakes||0)+1;const sec=penaltySec(G.mistakes);
+  G.elapsedMs+=sec*1000;tick();
+  const m=Math.floor(sec/60),s=sec%60;
+  toast('警告! 罚时 +'+(m?m+'分'+(s?s+'秒':''):s+'秒'));
+}
+function tick(){$('timer').textContent=fmtTime(nowElapsed());}
 function startTimer(){if(G.running||G.solved)return;G.running=true;G.startTs=Date.now();G.timerId=setInterval(tick,100);tick();}
 function stopTimer(){if(!G.running)return;G.elapsedMs+=Date.now()-G.startTs;G.running=false;clearInterval(G.timerId);tick();}
 function resetTimer(){stopTimer();G.elapsedMs=0;G.running=false;tick();}
@@ -1278,7 +1300,7 @@ const SAVE_KEY='mmdoku.save.v2';
 function saveGame(){try{
   if(!G.puzzle){localStorage.setItem(SAVE_KEY,JSON.stringify({staged:G.stagedCode}));return;}
   const notes=G.notes.map(row=>row.map(s=>[...s]));
-  localStorage.setItem(SAVE_KEY,JSON.stringify({staged:G.stagedCode,code:G.currentCode,values:G.values,notes,elapsedMs:nowElapsed(),solved:G.solved,phase:G.phase,difficulty:G.difficulty,aux:auxSerialize()}));
+  localStorage.setItem(SAVE_KEY,JSON.stringify({staged:G.stagedCode,code:G.currentCode,values:G.values,notes,elapsedMs:nowElapsed(),mistakes:G.mistakes,auxOpen:G.auxOpen,solved:G.solved,phase:G.phase,difficulty:G.difficulty,aux:auxSerialize()}));
 }catch(e){}}
 function loadGame(){try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));if(!s)return false;
   if(s.staged){G.stagedCode=s.staged;$('code').value=s.staged;try{const p=decodeShareCode(s.staged);$('size').value=String(p.N);$('diff').value=String(p.difficulty);renderQR(s.staged);}catch(e){}}
@@ -1294,8 +1316,9 @@ function startPuzzle(p,code,opt){
   G.values=opt.restore&&opt.restore.values?opt.restore.values:Array.from({length:p.N},()=>Array(p.N).fill(0));
   G.notes=opt.restore&&opt.restore.notes?opt.restore.notes.map(row=>row.map(a=>new Set(a))):Array.from({length:p.N},()=>Array.from({length:p.N},()=>new Set()));
   G.sel=null;G.hist=[];G.redo=[];G.solved=!!(opt.restore&&opt.restore.solved);
+  G.auxOpen=!!(opt.restore&&opt.restore.auxOpen)&&auxFits();  // 手机窄屏不自动开(避免一载入就变宽)
   $('size').value=String(p.N);$('diff').value=String(G.difficulty);
-  resetTimer();G.elapsedMs=(opt.restore&&opt.restore.elapsedMs)||0;tick();
+  resetTimer();G.elapsedMs=(opt.restore&&opt.restore.elapsedMs)||0;G.mistakes=(opt.restore&&opt.restore.mistakes)||0;tick();
   buildNumpad();buildBoard();renderAll();auxInit(opt.restore);updateAux();relayout();auxOnSelect();
   const restored=opt.restore;
   if(G.solved){setPhase('idle');$('playcover').classList.remove('show');}
@@ -1308,9 +1331,9 @@ function startPuzzle(p,code,opt){
 /* ---------- 阶段状态机:idle / playing / paused ---------- */
 function setPhase(ph){
   G.phase=ph;const btn=$('playbtn');const cover=$('playcover');
-  if(ph==='idle'){btn.textContent='▶️';cover.classList.add('show');}       // 开始前:显示说明遮盖
-  else if(ph==='playing'){btn.textContent='⏸️';cover.classList.remove('show');} // 游戏中:隐藏
-  else if(ph==='paused'){btn.textContent='🔄';cover.classList.add('show');}  // 暂停中:显示说明遮盖
+  if(ph==='idle'){btn.textContent='开始';cover.classList.add('show');}       // 开始前:显示说明遮盖
+  else if(ph==='playing'){btn.textContent='暂停';cover.classList.remove('show');} // 游戏中:隐藏
+  else if(ph==='paused'){btn.textContent='继续';cover.classList.add('show');}  // 暂停中:显示说明遮盖
 }
 function onPlayBtn(){
   if(G.phase==='idle')doStart();
@@ -1428,7 +1451,9 @@ function renderQR(code){
 }
 
 /* ---------- 选择 / 高亮 / 渲染 ---------- */
-function selectCell(r,c){if(G.phase!=='playing')return;G.sel={r,c};renderHighlights();auxOnSelect();} // 已知格也可选,只是不可改
+function selectCell(r,c){if(G.phase!=='playing')return;G.sel={r,c}; // 已知格也可选,只是不可改
+  if(G.aux&&G.aux.sel){G.aux.sel=null;auxApplySel();} // 点棋盘 → 结果区丢焦点、取消选择(清高亮/按钮/Cage 花纹)
+  renderHighlights();auxOnSelect();}
 function renderAll(){const N=G.N;for(let r=0;r<N;r++)for(let c=0;c<N;c++)renderCell(r,c);computeConflicts();renderHighlights();updateRemaining();}
 function renderCell(r,c){
   const cell=G.cellEls[r][c];if(cell.classList.contains('given'))return;
@@ -1472,16 +1497,24 @@ function computeConflicts(){
   for(let r=0;r<N;r++)for(let c=0;c<N;c++)G.cellEls[r][c].classList.toggle('conflict',bad[r][c]);
   return bad;
 }
+function hasNewRed(old,bad){                                    // bad 中是否有格由「非红」变「红」(尺寸不同也安全)
+  if(!old)return false;const N=bad.length;
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(bad[r][c]&&!(old[r]&&old[r][c]))return true;
+  return false;
+}
 function isComplete(){const N=G.N;for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(!G.values[r][c])return false;for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(G.conflicts[r][c])return false;return true;}
 
 /* ---------- 操作 ---------- */
 function snapshot(r,c){return{r,c,v:G.values[r][c],n:[...G.notes[r][c]]};}
 function pushHist(snap){G.hist.push(snap);G.redo.length=0;}
 function applyChange(r,c,fn){const before=snapshot(r,c);fn();pushHist(before);afterChange();}
-function afterChange(){renderCell(G.sel.r,G.sel.c);computeConflicts();updateRemaining();renderHighlights();saveGame();
+function afterChange(){renderCell(G.sel.r,G.sel.c);
+  const before=G.conflicts;const bad=computeConflicts();updateRemaining();renderHighlights();
+  if(G.phase==='playing'&&!G.solved&&hasNewRed(before,bad))registerWarning(); // 只在游戏中、用户操作导致新红时罚时(撤销/重做/装载不算)
+  saveGame();
   if(!G.solved&&isComplete())onWin();}
 function pressNum(v){
-  if(G.phase!=='playing'){toast('先点 ▶️ 开始');return;}
+  if(G.phase!=='playing'){toast('先点「开始」');return;}
   if(!G.sel){toast('先点一个格子');return;}
   if(G.solved)return;const {r,c}=G.sel;
   if(G.cellEls[r][c].classList.contains('given'))return;
@@ -1505,9 +1538,10 @@ function copyShare(){const s=G.winShare;if(!s)return;const note=$('win-note');
   try{const ta=document.createElement('textarea');ta.value=s;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);ok();}catch(e){no();}
 }
 function onWin(){G.solved=true;stopTimer();setPhase('idle');$('playcover').classList.remove('show');
-  const t=G.elapsedMs;const sc=calcScore(t);saveGame();
-  G.winShare='用时'+fmtShareTime(t)+'，得分'+sc;
-  $('win-time').textContent='用时 '+fmtShareTime(t);$('win-score').textContent='得分 '+sc;
+  const t=G.elapsedMs;saveGame();                             // t 已含罚时(stopTimer 已把跑表时间归入 elapsedMs)
+  const mtxt=G.mistakes?'失误 '+G.mistakes+' 次':'零失误';
+  G.winShare='用时'+fmtShareTime(t)+'，'+mtxt;
+  $('win-time').textContent='用时 '+fmtShareTime(t);$('win-score').textContent=mtxt;
   $('win-note').textContent='';$('win-note').classList.remove('ok');$('win-modal').classList.add('show');
   copyShare();                    // 顺便复制结果到剪贴板(结算页提示已复制)
   setTimeout(autoNewGame,60);     // 完成后自动生成新局(进入等待开始)
@@ -1530,36 +1564,38 @@ function askConfirm(title,msg,onYes,onNo,yesLabel,noLabel){
   $('confirm-yes').textContent=yesLabel||'确定';$('confirm-no').textContent=noLabel||'取消';
   confirmCb={yes:onYes,no:onNo};$('confirm-modal').classList.add('show');
 }
+function auxFits(){return (document.documentElement.clientWidth||window.innerWidth||0)>=700;} // 够宽才自动记忆「开」(手机不自动开)
+function toggleAux(){G.auxOpen=!G.auxOpen;updateAux();relayout();auxOnSelect();saveGame();}
 function updateAux(){
-  const on=G.N===9;$('stage').classList.toggle('has-aux',on);const app=$('app');
+  const on=!!G.auxOpen;$('stage').classList.toggle('has-aux',on);
+  const tg=$('aux-toggle');if(tg)tg.classList.toggle('on',on);
+  const app=$('app');
   if(on){
-    const pageW=document.documentElement.clientWidth||window.innerWidth||0;const gap=8;
-    let appW=Math.min(560,pageW);                 // 基础界面宽(封顶 560)
-    let auxW=pageW-appW-gap;                        // 先撑满剩余
-    const hi=0.618*appW,lo=0.4*appW;               // aux 夹在 [0.4, 0.618]×基础
-    if(auxW>hi)auxW=hi;                            // 宽屏:封顶,两侧留白
-    else if(auxW<lo){appW=Math.max(300,Math.min(560,(pageW-gap)/1.4));auxW=0.4*appW;} // 窄屏:缩基础,aux 保底 0.4 并撑满
-    appW=Math.round(appW);auxW=Math.round(Math.max(0,auxW));
-    $('aux').style.width=auxW+'px';app.style.flex='0 0 '+appW+'px';app.style.width=appW+'px';
-  }else{app.style.flex='';app.style.width='';}
+    // 不压缩基础界面:app 保持自身宽(≤560),辅助区取 0.618×app 挂右边;
+    // 宽屏两边居中放得下,窄屏(手机)溢出,靠 safe center 靠左、可横向 move 查看。
+    const appW=Math.round(Math.min(560,document.documentElement.clientWidth||window.innerWidth||560));
+    $('aux').style.width=Math.round(0.618*appW)+'px';
+    app.style.flex='0 0 '+appW+'px';app.style.width=appW+'px';
+  }else{app.style.flex='';app.style.width='';$('aux').style.width='';}
 }
 
 /* ---------- 辅助区(9×9 笼分解助手)---------- */
 const AUX_OP={'*':'✖️','+':'➕','-':'➖','/':'➗'};
 function auxInit(restore){
-  G.aux={cages:{},notes:'',curCage:-1};
+  G.aux={cages:{},segments:[],notes:'',curCage:-1,sel:null};
   if(restore&&restore.aux){const a=restore.aux;G.aux.notes=a.notes||'';
-    for(const k in (a.cages||{})){const c=a.cages[k];G.aux.cages[k]={masked:c.masked||[],value:(c.value==null?null:c.value),count:(c.count==null?null:c.count),results:c.results||null,struck:c.struck||[]};}}
+    for(const k in (a.cages||{})){const c=a.cages[k];G.aux.cages[k]={masked:c.masked||[],value:(c.value==null?null:c.value),count:(c.count==null?null:c.count)};}
+    if(Array.isArray(a.segments))G.aux.segments=a.segments.map(s=>({cageIdx:s.cageIdx,op:s.op,value:s.value,count:s.count,results:(s.results||[]).map(r=>r.slice()),struck:(s.struck||[]).slice()}));}
   $('aux-notes').innerHTML=G.aux.notes||'';
-  buildAuxMask();
+  buildAuxMask();auxRenderResult();
 }
-function buildAuxMask(){const m=$('aux-mask');if(m.childElementCount)return;
-  for(let v=1;v<=9;v++){const b=document.createElement('button');b.textContent=v;b.dataset.v=v;
+function buildAuxMask(){const m=$('aux-mask');m.innerHTML='';m.style.gridTemplateColumns='repeat('+G.N+',1fr)'; // 屏蔽值按棋盘大小 1~N,自适应占满宽度
+  for(let v=1;v<=G.N;v++){const b=document.createElement('button');b.textContent=v;b.dataset.v=v;
     b.addEventListener('pointerdown',e=>{e.preventDefault();auxToggleMask(v);});m.appendChild(b);}}
-function auxCage(idx){if(!G.aux.cages[idx])G.aux.cages[idx]={masked:[],value:null,count:null,results:null,struck:[]};return G.aux.cages[idx];}
+function auxCage(idx){if(!G.aux.cages[idx])G.aux.cages[idx]={masked:[],value:null,count:null};return G.aux.cages[idx];} // 仅控制区记忆(屏蔽/值/数量)
 function auxCurIdx(){ // 当前选中格所在笼:>=0 正常笼;-2 单格笼;-1 无
-  if(G.N!==9||!G.sel)return -1;const idx=G.cellCage[G.sel.r][G.sel.c];return G.puzzle.cages[idx].op==='='?-2:idx;}
-function auxOnSelect(){if(G.N!==9)return;G.aux.curCage=auxCurIdx();auxRenderCtrl();auxRenderDecomp();}
+  if(!G.sel)return -1;const idx=G.cellCage[G.sel.r][G.sel.c];return G.puzzle.cages[idx].op==='='?-2:idx;}
+function auxOnSelect(){if(!G.auxOpen)return;G.aux.curCage=auxCurIdx();auxRenderCtrl();} // 结果区不随选格变,只刷新控制区回填
 function auxRenderCtrl(){
   const idx=G.aux.curCage;const val=$('aux-value'),cnt=$('aux-count'),ex=$('aux-exec');
   const masks=document.querySelectorAll('#aux-mask button');
@@ -1573,30 +1609,57 @@ function auxRenderCtrl(){
   masks.forEach(b=>{const v=+b.dataset.v;b.disabled=false;b.classList.toggle('masked',st.masked.includes(v));});
 }
 function auxFmt(op,r,value){if(op==='*')return r.join('*')+'Σ'+r.reduce((a,b)=>a+b,0);if(op==='+')return r.join('+')+'='+value;if(op==='-')return r[0]+'-'+r[1]+'='+value;return r[0]+'÷'+r[1]+'='+value;}
-function auxRenderDecomp(){
-  const box=$('aux-decomp');const idx=G.aux.curCage;box.innerHTML='';
-  if(idx<0){box.innerHTML='<div class="hint">'+(idx===-2?'单格笼无需分解':'点棋盘上 9×9 的某个笼格')+'</div>';return;}
-  const cg=G.puzzle.cages[idx];const st=auxCage(idx);const op=cg.op;
-  if(st.results==null){box.innerHTML='<div class="hint">条件已变 — 点 '+(AUX_OP[op]||'执行')+' 分解</div>';return;}
-  if(st.results.length===0){box.innerHTML='<div class="empty">无符合条件的解</div>';return;}
-  const value=(st.value==null?cg.target:st.value);
-  st.results.forEach((r,i)=>{const d=document.createElement('div');d.className='ln'+(st.struck.includes(i)?' struck':'');d.textContent=auxFmt(op,r,value);
-    d.addEventListener('dblclick',()=>{const p=st.struck.indexOf(i);if(p<0)st.struck.push(i);else st.struck.splice(p,1);d.classList.toggle('struck');saveGame();});
-    box.appendChild(d);});
-}
-function auxClearResults(){const idx=G.aux.curCage;if(idx<0)return;const st=auxCage(idx);st.results=null;st.struck=[];auxRenderDecomp();saveGame();}
+/* ---- 结果区(累加的「结果段」日志:一段 = 首行 + 结果行;开局到新局一直保留)---- */
+const OPSYM={'*':'×','+':'+','-':'−','/':'÷'};
+function auxAnchor(ci){const cells=G.puzzle.cages[ci].cells;let b=cells[0];for(const cc of cells)if(cc[0]<b[0]||(cc[0]===b[0]&&cc[1]<b[1]))b=cc;return b;} // 最上行→最左列
+function auxIdxLabel(ci){const a=auxAnchor(ci);return String.fromCharCode(65+a[1])+(a[0]+1);} // 字母=列、数字=行(顶为 1)
+function auxIsSel(si,row){return !!G.aux.sel&&G.aux.sel.seg===si&&G.aux.sel.row===row;}
+function auxUpdateLinked(){const N=G.N;for(let r=0;r<N;r++)for(let c=0;c<N;c++)G.cellEls[r][c].classList.remove('cage-linked');
+  if(G.aux.sel){const ci=G.aux.segments[G.aux.sel.seg].cageIdx;for(const[r,c]of G.puzzle.cages[ci].cells)G.cellEls[r][c].classList.add('cage-linked');}} // 选中行→对应 Cage 全格加花纹
+function auxSegBtn(txt,disabled,fn){const b=document.createElement('button');b.className='seg-btn';b.textContent=txt;
+  if(disabled)b.disabled=true;else b.addEventListener('click',e=>{e.stopPropagation();fn();});return b;} // stopPropagation:点按钮不触发行的选中
+function auxRowBtns(si,row){const g=document.createElement('span');g.className='seg-btns';
+  if(row===-1)g.append(auxSegBtn('🔼',si===0,()=>auxMoveSeg(si,-1)),auxSegBtn('🔽',si===G.aux.segments.length-1,()=>auxMoveSeg(si,1)),auxSegBtn('🗑️',false,()=>auxDelSeg(si)));
+  else g.appendChild(auxSegBtn('🗑️',false,()=>auxDelRow(si,row)));return g;}
+function auxApplySel(){const box=$('aux-decomp'); // 就地更新选中(不重建 DOM,保住结果行的 dblclick)
+  box.querySelectorAll('.sel').forEach(el=>{el.classList.remove('sel');const g=el.querySelector('.seg-btns');if(g)g.remove();});
+  const s=G.aux.sel;if(s){const el=box.querySelector('[data-seg="'+s.seg+'"][data-row="'+s.row+'"]');if(el){el.classList.add('sel');el.appendChild(auxRowBtns(s.seg,s.row));}}
+  auxUpdateLinked();}
+function auxToggleSel(si,row){G.aux.sel=auxIsSel(si,row)?null:{seg:si,row:row};auxApplySel();saveGame();}
+function auxMoveSeg(si,dir){const j=si+dir,segs=G.aux.segments;if(j<0||j>=segs.length)return;const t=segs[si];segs[si]=segs[j];segs[j]=t;G.aux.sel={seg:j,row:-1};auxRenderResult();saveGame();}
+function auxDelSeg(si){G.aux.segments.splice(si,1);G.aux.sel=null;auxRenderResult();saveGame();}
+function auxDelRow(si,ri){const sg=G.aux.segments[si];sg.results.splice(ri,1);sg.struck=sg.struck.filter(x=>x!==ri).map(x=>x>ri?x-1:x);G.aux.sel=null;auxRenderResult();saveGame();}
+function auxToggleStruck(si,ri){const sg=G.aux.segments[si];const p=sg.struck.indexOf(ri);if(p<0)sg.struck.push(ri);else sg.struck.splice(p,1);auxRenderResult();saveGame();}
+function auxRenderResult(){const box=$('aux-decomp');box.innerHTML='';const segs=G.aux.segments;
+  if(!segs.length){box.innerHTML='<div class="hint">选中一个格子 → 控制区点运算符分解,结果加到这里</div>';auxUpdateLinked();return;}
+  segs.forEach((sg,si)=>{const wrap=document.createElement('div');wrap.className='seg';
+    const h=document.createElement('div');h.className='seg-h';h.dataset.seg=si;h.dataset.row=-1;
+    const cgi=G.puzzle.cages[sg.cageIdx];  // 首行 = idx · cage info(目标+运算) · 分解值 · 分解数量
+    const hi=document.createElement('span');hi.className='seg-h-txt';hi.textContent=auxIdxLabel(sg.cageIdx)+' · '+cgi.target+(OPSYM[sg.op]||'')+' · 值'+sg.value+' · 数量'+sg.count;h.appendChild(hi);
+    h.addEventListener('click',()=>auxToggleSel(si,-1));wrap.appendChild(h);
+    if(!sg.results.length){const e=document.createElement('div');e.className='empty';e.textContent='无符合条件的解';wrap.appendChild(e);}
+    else sg.results.forEach((r,ri)=>{const d=document.createElement('div');d.className='ln'+(sg.struck.includes(ri)?' struck':'');d.dataset.seg=si;d.dataset.row=ri;
+      const tx=document.createElement('span');tx.className='ln-txt';tx.textContent=auxFmt(sg.op,r,sg.value);d.appendChild(tx);
+      d.addEventListener('click',()=>auxToggleSel(si,ri));d.addEventListener('dblclick',()=>auxToggleStruck(si,ri));wrap.appendChild(d);});
+    box.appendChild(wrap);});
+  auxApplySel();}
 function auxToggleMask(v){const idx=G.aux.curCage;if(idx<0)return;const st=auxCage(idx);const p=st.masked.indexOf(v);if(p<0)st.masked.push(v);else st.masked.splice(p,1);
-  const b=document.querySelector('#aux-mask button[data-v="'+v+'"]');if(b)b.classList.toggle('masked');auxClearResults();}
-function auxExec(){const idx=G.aux.curCage;if(idx<0)return;const cg=G.puzzle.cages[idx];const st=auxCage(idx);
+  const b=document.querySelector('#aux-mask button[data-v="'+v+'"]');if(b)b.classList.toggle('masked');saveGame();} // 只影响下次分解,不动历史段
+function auxExec(){const idx=G.aux.curCage;if(idx<0){toast('请先选择一个单元格');return;}const cg=G.puzzle.cages[idx];const st=auxCage(idx);
   const value=parseInt($('aux-value').value,10);const count=parseInt($('aux-count').value,10);
   if(!Number.isFinite(value)||value<1){toast('请输入分解值');return;}
-  st.value=value;st.count=count;st.results=decompose(cg.op,value,count,st.masked);st.struck=[];auxRenderDecomp();saveGame();}
+  st.value=value;st.count=count;                                     // 记忆到该 Cage 控制状态
+  const results=decompose(cg.op,value,count,st.masked,G.N);
+  G.aux.segments.push({cageIdx:idx,op:cg.op,value:value,count:count,results:results,struck:[]}); // 追加到尾部
+  auxRenderResult();saveGame();}
 function noteFirstStruck(){const sel=window.getSelection();if(!sel.rangeCount)return false;const r=sel.getRangeAt(0);let node=r.startContainer;let el=node.nodeType===3?node.parentElement:node;
   while(el&&el!==$('aux-notes')){if(/^(S|STRIKE|DEL)$/.test(el.tagName))return true;const td=(getComputedStyle(el).textDecorationLine||getComputedStyle(el).textDecoration||'');if(td.indexOf('line-through')>=0)return true;el=el.parentElement;}return false;}
 function auxNoteStrike(){const ed=$('aux-notes');const sel=window.getSelection();if(!sel.rangeCount||sel.isCollapsed)return;
   const want=!noteFirstStruck();document.execCommand('strikeThrough');if(document.queryCommandState('strikeThrough')!==want)document.execCommand('strikeThrough');
   G.aux.notes=ed.innerHTML;saveGame();}
-function auxSerialize(){if(!G.aux)return null;const cages={};for(const k in G.aux.cages){const c=G.aux.cages[k];cages[k]={masked:c.masked,value:c.value,count:c.count,results:c.results,struck:c.struck};}return{cages,notes:G.aux.notes};}
+function auxSerialize(){if(!G.aux)return null;const cages={};for(const k in G.aux.cages){const c=G.aux.cages[k];cages[k]={masked:c.masked,value:c.value,count:c.count};}
+  const segments=G.aux.segments.map(s=>({cageIdx:s.cageIdx,op:s.op,value:s.value,count:s.count,results:s.results,struck:s.struck}));
+  return{cages,segments,notes:G.aux.notes};}
 
 /* ---------- ExCode 处理:validate / isDuplicate / apply + 四入口 ---------- */
 function validateExCode(s){try{return decodeShareCode(s);}catch(e){return null;}}
@@ -1615,7 +1678,7 @@ function doGenerate(){
   setTimeout(()=>{
     let code,guard=0;
     do{const seed=(Date.now()^(Math.floor(performance.now()*1000))^(guard*2654435761))>>>0;const p=generate(N,d,makeRng(seed));code=encodeShareCode(p);}while(isDuplicate(code)&&++guard<8);
-    applyExCode(code,()=>toast('已生成,点 ▶️ 开始'));
+    applyExCode(code,()=>toast('已生成,点「开始」'));
   },20);
 }
 /* 📋 粘贴 */
@@ -1664,14 +1727,15 @@ function initSelects(){const sz=$('size');SIZES.forEach(n=>{const o=document.cre
 function bindEvents(){
   $('gen').onclick=doGenerate;$('playbtn').onclick=onPlayBtn;
   $('copy').onclick=doCopy;$('paste').onclick=doPaste;$('photo').onclick=doPhoto;$('verify').onclick=doVerify;
+  $('aux-toggle').onclick=toggleAux;
   $('photoinput').onchange=onPhotoFile;
   $('cam-cancel').onclick=closeCamera;
   $('mode').onclick=()=>setMode(G.mode==='input'?'note':'input');
   $('del').onclick=delCell;$('undo').onclick=undo;$('redo').onclick=redo;
   // 辅助区事件
   $('aux-exec').onclick=auxExec;
-  $('aux-value').addEventListener('input',()=>{const idx=G.aux.curCage;if(idx>=0){const v=parseInt($('aux-value').value,10);auxCage(idx).value=Number.isFinite(v)?v:null;}auxClearResults();});
-  $('aux-count').addEventListener('change',()=>{const idx=G.aux.curCage;if(idx>=0)auxCage(idx).count=+$('aux-count').value;auxClearResults();});
+  $('aux-value').addEventListener('input',()=>{const idx=G.aux.curCage;if(idx>=0){const v=parseInt($('aux-value').value,10);auxCage(idx).value=Number.isFinite(v)?v:null;saveGame();}});
+  $('aux-count').addEventListener('change',()=>{const idx=G.aux.curCage;if(idx>=0){auxCage(idx).count=+$('aux-count').value;saveGame();}});
   $('aux-strike').addEventListener('pointerdown',e=>{e.preventDefault();auxNoteStrike();});
   $('aux-notes').addEventListener('input',()=>{if(G.aux){G.aux.notes=$('aux-notes').innerHTML;saveGame();}});
   $('code').addEventListener('input',()=>{const s=$('code').value.trim();if(validateExCode(s))renderQR(s);});
@@ -1683,7 +1747,8 @@ function bindEvents(){
   window.addEventListener('orientationchange',()=>setTimeout(()=>{updateAux();relayout();},200));
   document.addEventListener('visibilitychange',()=>{if(document.hidden)saveGame();});
   document.addEventListener('keydown',e=>{
-    if(e.target===$('code'))return;
+    const t=e.target;  // 焦点在任何可编辑处(ExCode / Sticky / 分解值 / 分解数量·大小·难度下拉)时,键盘留给它,不投给棋盘
+    if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'||t.isContentEditable||(t.closest&&t.closest('[contenteditable="true"]'))))return;
     if(e.key>='1'&&e.key<=String(Math.min(9,G.N))){pressNum(+e.key);e.preventDefault();}
     else if(e.key==='Backspace'||e.key==='Delete'){delCell();e.preventDefault();}
     else if(e.key==='ArrowUp'){move(-1,0);e.preventDefault();}
@@ -1707,7 +1772,7 @@ function boot(){
   setTimeout(()=>{updateAux();relayout();},50);
   if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
-window.__mm={G,generate,makeRng,encodeShareCode,decodeShareCode,colorCages,decompose,QR,startPuzzle,doGenerate,doStart,doPause,doResume,selectCell,pressNum,move,setMode,delCell,undo,redo,isComplete,computeConflicts,validateExCode,applyExCode,renderQR,auxOnSelect,auxExec,auxToggleMask,auxNoteStrike,doPhoto,openCamera,closeCamera,camAvailable};
+window.__mm={G,generate,makeRng,encodeShareCode,decodeShareCode,colorCages,decompose,QR,startPuzzle,doGenerate,doStart,doPause,doResume,selectCell,pressNum,move,setMode,delCell,undo,redo,isComplete,computeConflicts,validateExCode,applyExCode,renderQR,toggleAux,auxOnSelect,auxExec,auxToggleMask,auxNoteStrike,auxRenderResult,auxToggleSel,auxMoveSeg,auxDelSeg,auxDelRow,auxToggleStruck,doPhoto,openCamera,closeCamera,camAvailable};
 boot();
 </script>
 </body>
