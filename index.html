@@ -1274,7 +1274,7 @@ function startPuzzle(p,code,opt){
   G.sel=null;G.hist=[];G.redo=[];G.solved=!!(opt.restore&&opt.restore.solved);
   $('size').value=String(p.N);$('diff').value=String(G.difficulty);
   resetTimer();G.elapsedMs=(opt.restore&&opt.restore.elapsedMs)||0;tick();
-  buildNumpad();buildBoard();renderAll();auxInit(opt.restore);relayout();updateAux();auxOnSelect();
+  buildNumpad();buildBoard();renderAll();auxInit(opt.restore);updateAux();relayout();auxOnSelect();
   const restored=opt.restore;
   if(G.solved){setPhase('idle');$('playcover').classList.remove('show');}
   else if(restored){setPhase(restored.phase==='idle'?'idle':'paused');} // 装载不自动跑表:等待开始/等待继续
@@ -1498,7 +1498,19 @@ function askConfirm(title,msg,onYes,onNo,yesLabel,noLabel){
   $('confirm-yes').textContent=yesLabel||'确定';$('confirm-no').textContent=noLabel||'取消';
   confirmCb={yes:onYes,no:onNo};$('confirm-modal').classList.add('show');
 }
-function updateAux(){const on=G.N===9;$('stage').classList.toggle('has-aux',on);if(on){$('aux').style.width=Math.round($('app').clientWidth*0.618)+'px';}}
+function updateAux(){
+  const on=G.N===9;$('stage').classList.toggle('has-aux',on);const app=$('app');
+  if(on){
+    const pageW=document.documentElement.clientWidth||window.innerWidth||0;const gap=8;
+    let appW=Math.min(560,pageW);                 // 基础界面宽(封顶 560)
+    let auxW=pageW-appW-gap;                        // 先撑满剩余
+    const hi=0.618*appW,lo=0.4*appW;               // aux 夹在 [0.4, 0.618]×基础
+    if(auxW>hi)auxW=hi;                            // 宽屏:封顶,两侧留白
+    else if(auxW<lo){appW=Math.max(300,Math.min(560,(pageW-gap)/1.4));auxW=0.4*appW;} // 窄屏:缩基础,aux 保底 0.4 并撑满
+    appW=Math.round(appW);auxW=Math.round(Math.max(0,auxW));
+    $('aux').style.width=auxW+'px';app.style.flex='0 0 '+appW+'px';app.style.width=appW+'px';
+  }else{app.style.flex='';app.style.width='';}
+}
 
 /* ---------- 辅助区(9×9 笼分解助手)---------- */
 const AUX_OP={'*':'✖️','+':'➕','-':'➖','/':'➗'};
@@ -1629,8 +1641,8 @@ function bindEvents(){
   $('win-close').onclick=()=>$('win-modal').classList.remove('show');
   $('confirm-yes').onclick=()=>{$('confirm-modal').classList.remove('show');if(confirmCb&&confirmCb.yes)confirmCb.yes();confirmCb=null;};
   $('confirm-no').onclick=()=>{$('confirm-modal').classList.remove('show');if(confirmCb&&confirmCb.no)confirmCb.no();confirmCb=null;};
-  window.addEventListener('resize',()=>{relayout();updateAux();});
-  window.addEventListener('orientationchange',()=>setTimeout(()=>{relayout();updateAux();},200));
+  window.addEventListener('resize',()=>{updateAux();relayout();});
+  window.addEventListener('orientationchange',()=>setTimeout(()=>{updateAux();relayout();},200));
   document.addEventListener('visibilitychange',()=>{if(document.hidden)saveGame();});
   document.addEventListener('keydown',e=>{
     if(e.target===$('code'))return;
@@ -1654,7 +1666,7 @@ function boot(){
     if(!p){const N=+$('size').value,d=+$('diff').value;const seed=(Date.now()^(Math.floor(performance.now()*1000)))>>>0;p=generate(N,d,makeRng(seed));code=encodeShareCode(p);G.stagedCode=code;$('code').value=code;renderQR(code);}
     startPuzzle(p,code,{idle:true});
   }
-  setTimeout(()=>{relayout();updateAux();},50);
+  setTimeout(()=>{updateAux();relayout();},50);
 }
 window.__mm={G,generate,makeRng,encodeShareCode,decodeShareCode,colorCages,decompose,QR,startPuzzle,doGenerate,doStart,doPause,doResume,selectCell,pressNum,move,setMode,delCell,undo,redo,isComplete,computeConflicts,validateExCode,applyExCode,renderQR,auxOnSelect,auxExec,auxToggleMask,auxNoteStrike};
 boot();
