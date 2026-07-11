@@ -1,6 +1,6 @@
 /* mmDoku service worker —— 壳缓存(离线可用)+ 导航 network-first(联网 F5 拿最新)
    版本 = CACHE(唯一来源;格式 appname.major.minor.patch,每次部署至少 patch +1) */
-const CACHE = 'mmdoku.0.5.1';
+const CACHE = 'mmdoku.0.5.3';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
